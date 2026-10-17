@@ -1,8 +1,8 @@
 import { Image } from "expo-image";
 import * as Linking from "expo-linking";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Chip, Label, Notice, Row } from "@/components/ui";
@@ -42,6 +42,17 @@ export default function ProposalScreen() {
     };
   }, [api, app, address, reload]);
 
+  // Whether this proposal is the screen on top (a finished build only opens the 3D view if so).
+  const focused = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      focused.current = true;
+      return () => {
+        focused.current = false;
+      };
+    }, []),
+  );
+
   const build = useCallback(async () => {
     if (!p) return;
     setBuilding(true);
@@ -49,8 +60,13 @@ export default function ProposalScreen() {
     const where = address && !address.startsWith("Your location") ? address : p.application.address;
     const res = await buildModel(where, p.application.app_number);
     setBuilding(false);
-    if (res.ok) setReload((n) => n + 1);
-    else setBuildNote(res.message ?? "Ordis couldn't build a model for this application.");
+    if (!res.ok) {
+      setBuildNote(res.message ?? "Ordis couldn't build a model for this application.");
+      return;
+    }
+    setReload((n) => n + 1); // this screen refreshes behind the 3D view (preview, summary, facts)
+    // Straight to the model that was just built, if the resident is still on this proposal.
+    if (focused.current) router.push({ pathname: "/model/[app]", params: { app: p.application.app_number, title: p.application.address } });
   }, [p, address]);
 
   /** The interactive 3D model, inside the app. */
