@@ -171,8 +171,8 @@ export default function ProposalScreen() {
               </Text>
             )}
             {p.rental_mentions.length > 0 && <Text style={{ fontSize: 12, color: color.muted }}>The application says:</Text>}
-            {p.rental_mentions.map((m) => (
-              <Text key={m} style={s.quote}>
+            {p.rental_mentions.map((m, i) => (
+              <Text key={i} style={s.quote}>
                 “{m}”
               </Text>
             ))}

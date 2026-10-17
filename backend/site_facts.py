@@ -36,8 +36,10 @@ def rental_mentions(texts: list[str], limit: int = 3) -> list[str]:
         for sentence in re.split(r"(?<=[.;])\s+", text or ""):
             s = " ".join(sentence.split())
             m = RENTAL_WORDS.search(s)
-            if m and s not in out:
-                out.append(_excerpt(s, m.start()))
+            if m:
+                quote = _excerpt(s, m.start())
+                if quote not in out:  # related applications often repeat the same sentence
+                    out.append(quote)
     return out[:limit]
 
 

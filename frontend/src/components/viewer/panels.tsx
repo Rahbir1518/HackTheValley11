@@ -526,8 +526,8 @@ function SiteToday({ appNumber }: { appNumber: string }) {
       {d.rental_mentions.length > 0 ? (
         <div className="space-y-1.5">
           <p className="text-[10px] text-muted">The application says:</p>
-          {d.rental_mentions.map((m) => (
-            <p key={m} className="border-l-2 border-prop pl-2.5 text-[11px] italic leading-[1.5] text-black">
+          {d.rental_mentions.map((m, i) => (
+            <p key={i} className="border-l-2 border-prop pl-2.5 text-[11px] italic leading-[1.5] text-black">
               “{m}”
             </p>
           ))}

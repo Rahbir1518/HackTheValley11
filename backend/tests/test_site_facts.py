@@ -23,3 +23,8 @@ def test_long_sentences_are_excerpted_around_the_rental_words():
     s = "Site plan for " + "a building with many features, " * 20 + "including 27 rental units to be replaced on site."
     (got,) = site_facts.rental_mentions([s])
     assert got.startswith("…") and "27 rental units to be replaced" in got and len(got) <= 302
+
+
+def test_repeated_long_sentences_are_quoted_once():
+    s = "Rezoning for " + "a building with many features, " * 20 + "and 827 purpose-built rental dwelling units above."
+    assert len(site_facts.rental_mentions([s, s])) == 1  # the same text in a related application
