@@ -89,6 +89,16 @@ function Viewer() {
   const [sceneCollapsed, setSceneCollapsed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [imageryOpen, setImageryOpen] = useState(true);
+  const [panelWidth, setPanelWidth] = useState(324);
+  const panelDrag = useRef<{ x: number; width: number } | null>(null);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem("ordis.panelWidth"));
+      if (saved >= 280 && saved <= 640) setPanelWidth(saved); // eslint-disable-line react-hooks/set-state-in-effect -- browser-only storage
+    } catch {
+      // storage unavailable; keep the default width
+    }
+  }, []);
   const viewportBox = useRef<HTMLDivElement>(null);
   const sync = useRef<CameraSync>({ pos: new THREE.Vector3(), target: new THREE.Vector3(), version: 0, owner: "a" });
 
@@ -409,8 +419,33 @@ function Viewer() {
           )}
         </div>
 
+        {/* Drag to resize the side panel */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel"
+          title="Drag to resize"
+          className="w-1.5 shrink-0 cursor-col-resize border-l border-line bg-white transition-colors hover:bg-select active:bg-prop"
+          onPointerDown={(e) => {
+            panelDrag.current = { x: e.clientX, width: panelWidth };
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (!panelDrag.current) return;
+            setPanelWidth(Math.min(640, Math.max(280, panelDrag.current.width - (e.clientX - panelDrag.current.x))));
+          }}
+          onPointerUp={() => {
+            panelDrag.current = null;
+            try {
+              localStorage.setItem("ordis.panelWidth", String(panelWidth));
+            } catch {
+              // storage unavailable; the width just won't be remembered
+            }
+          }}
+        />
+
         {/* Outline and properties */}
-        <aside className="thin-scroll w-[324px] shrink-0 overflow-y-auto border-l border-line bg-white">
+        <aside className="thin-scroll shrink-0 overflow-y-auto bg-white" style={{ width: panelWidth }}>
           {sunlight && current?.ok ? (
             <SunlightPanel
               address={current.geocode?.address_full ?? address}
