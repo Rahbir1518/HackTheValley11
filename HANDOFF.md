@@ -32,6 +32,7 @@ backend/ (FastAPI)
   chat.py                Ask Ordis home chat router (address -> proposals, else cited/general answer)
   sunlight.py            hours of ground-level sun lost/gained (solar ephemeris + 2D shadow polygons)
   block.py               "Your block in 5 years": every active nearby proposal placed in a built scene
+  briefing.py            one-page community-meeting briefing PDF (reportlab)
   blender_bridge/        headless Blender subprocess, streams build steps
   main.py                API (see below)
 blender/
@@ -71,7 +72,7 @@ cd frontend; npm run dev                                               # http://
   (list in `demo_addresses.txt`; already saved: 135 Liberty St, 5250 Yonge St).
 - Terminal-only pipeline run: `backend\.venv\Scripts\python -m backend.run "135 Liberty St"`.
 - After changing Blender materials: `backend\.venv\Scripts\python -m backend.rebuild_scenes` (no AI calls).
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (49 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (52 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
@@ -140,11 +141,16 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   floor (a clipping plane steps up one storey at a time, faces double-sided meanwhile) with a ticking
   "26 storeys" chip; block-view proposals rise the same way when they appear. Plays once per scene and view
   (not again after visiting the sunlight study); skipped with `prefers-reduced-motion`.
+- **Briefing PDF** (top bar, `POST /api/briefing`): one Letter page with a snapshot of the current 3D view (the
+  only thing the browser sends), the narration, stated vs estimated, sunlight lost on the study date (plus the
+  combined figure when the block view is on), meetings, the planner and the record link; neutrality note,
+  limitations and sources in the footer. Shrinks to fit one page; uses Segoe UI / Arial / DejaVu when present
+  for Unicode, else Helvetica with ASCII substitutes.
 - Clear progress card: steps tick off; on a refusal it says where it stopped, marks skipped steps and offers
   other nearby proposals that can be shown in 3D.
 
 **Other endpoints**: `/api/health`, `/api/applications`, `/api/ward`, `/api/sources`, `/api/cached`,
-`/api/involved`, `/api/housing`, `/api/ask`, `/files/...` (scenes, previews, heatmaps).
+`/api/involved`, `/api/housing`, `/api/ask`, `/api/block`, `/api/briefing`, `/files/...` (scenes, previews, heatmaps).
 
 ## Data gotchas worth remembering
 
@@ -191,7 +197,7 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 3. ~~Construction animation~~ (built).
 4. Scale comparisons (landmark ghost, "≈ 37 houses stacked").
 5. Before/after wipe slider.
-6. One-page briefing PDF for community meetings.
+6. ~~One-page briefing PDF~~ (built).
 7. Ward map coloured by application status.
 8. Narrated flyover (browser speech).
 

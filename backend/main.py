@@ -9,6 +9,7 @@ GET /api/run               Server-Sent Events: one `event` per agent step, then 
 GET /api/cached            addresses with a saved run, for the demo picker
 GET /api/block             every active nearby proposal placed in a built scene ("your block in 5 years")
 GET /api/sunlight          hours of sun lost for a scene and day (block=true: all proposals combined)
+POST /api/briefing         one-page PDF briefing for a community meeting
 GET /api/ward              application counts for a ward
 GET /api/sources           dataset links and refresh dates
 GET /files/scenes/...      built .glb / preview .png
@@ -80,15 +81,19 @@ def _sse(event: str, data) -> str:
 def involved(app_number: str):
     """How a resident can take part: community meetings (this and related applications),
     the City planner on the file, and the official record."""
-    import datetime as dt
-
-    from .agents.data_agent import related_applications
-
     db = store.connect()
     try:
         app_ = store.get_application(db, app_number)
     except store.DataError as e:
         raise HTTPException(404, str(e))
+    return involvement(db, app_)
+
+
+def involvement(db, app_: dict) -> dict:
+    import datetime as dt
+
+    from .agents.data_agent import related_applications
+
     today = dt.date.today().isoformat()
     meetings = {}
     for a in [app_] + related_applications(db, app_, limit=10):
@@ -204,6 +209,61 @@ def sunlight_result(scene_key: str, date: str, block: bool = False) -> dict:
 def sunlight_study(scene_key: str, date: str, block: bool = False):
     """Hours of ground-level direct sun lost/gained for a built scene on one day (cached)."""
     return sunlight_result(scene_key, date, block)
+
+
+class BriefingRequest(BaseModel):
+    scene_key: str
+    date: str  # sunlight study day, YYYY-MM-DD
+    block: bool = False  # include every active nearby proposal (needs /api/block first)
+    snapshot: str | None = Field(None, max_length=12_000_000)  # data:image/jpeg|png;base64 of the 3D view
+
+
+@app.post("/api/briefing")
+def briefing(req: BriefingRequest):
+    """One-page PDF for a community meeting: 3D snapshot, plain-language summary, stated vs
+    estimated, sunlight lost, meetings and the planner. Everything but the snapshot comes from
+    Ordis' own records for this scene, never from the request."""
+    import base64
+    import binascii
+    import re
+
+    from fastapi.responses import Response
+
+    from . import briefing as briefing_pdf
+
+    scene_dir = _scene_dir(req.scene_key)
+    image = None
+    if req.snapshot:
+        m = re.fullmatch(r"data:image/(?:png|jpeg);base64,([A-Za-z0-9+/=]+)", req.snapshot)
+        if not m:
+            raise HTTPException(400, "snapshot must be a PNG or JPEG data URL")
+        try:
+            image = base64.b64decode(m.group(1), validate=True)
+        except binascii.Error:
+            raise HTTPException(400, "snapshot is not valid base64")
+
+    db = store.connect()
+    plan = json.loads((scene_dir / "plan.json").read_text())
+    app_ = store.get_application(db, plan["metadata"]["application_id"])
+    narration_file = scene_dir / "narration.json"
+    block = None
+    if req.block and (scene_dir / "block.json").exists():
+        block = json.loads((scene_dir / "block.json").read_text())
+    facts = {
+        "application": app_,
+        "spec": _cached_spec(db, app_),
+        "narration": json.loads(narration_file.read_text()) if narration_file.exists() else None,
+        "involved": involvement(db, app_),
+        "sunlight": sunlight_result(req.scene_key, req.date),
+        "block": block,
+        "block_sunlight": sunlight_result(req.scene_key, req.date, block=True) if block else None,
+        "limitations": orchestrator.LIMITATIONS,
+        "sources": store.sources(db),
+    }
+    pdf = briefing_pdf.render(facts, image)
+    slug = re.sub(r"[^a-z0-9]+", "-", app_["address"].lower()).strip("-")
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="ordis-briefing-{slug}.pdf"'})
 
 
 @app.get("/api/block")

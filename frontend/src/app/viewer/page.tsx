@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Box, Image as ImageIcon, Maximize, MousePointer2, Move, Rotate3d } from "lucide-react";
+import { ArrowLeft, Box, FileDown, Image as ImageIcon, Maximize, MousePointer2, Move, Rotate3d } from "lucide-react";
 import * as THREE from "three";
 import AppNav from "@/components/AppNav";
 import { Ordi, StatusChip } from "@/components/brand";
@@ -23,7 +23,7 @@ import {
   storeysLabel,
 } from "@/components/viewer/panels";
 import type { CameraSync, Layers, Tool } from "@/components/viewer/Viewport";
-import { API_URL, getBlock, getSunlight, startRun, type Block, type RunResult, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
+import { API_URL, getBlock, getBriefing, getSunlight, startRun, type Block, type RunResult, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
 import { rememberPlace } from "@/lib/places";
 import { BLOCK_COLORS, buildTree, findNode, type SceneNode } from "@/lib/scene";
 import { minutesOfDayToronto, sunAt, sunTimes, torontoInstant } from "@/lib/sun";
@@ -179,6 +179,34 @@ function Viewer() {
     };
   }, [heatKey, sceneKey, date]);
   const heatCurrent = heat && heat.key === heatKey ? heat : null;
+
+  // ---------------------------------------------------------------- briefing PDF
+  const [briefing, setBriefing] = useState<"idle" | "busy" | "error">("idle");
+  const downloadBriefing = async () => {
+    if (!sceneKey || briefing === "busy") return;
+    setBriefing("busy");
+    try {
+      // The view on screen; in a split comparison, the "with proposal" side.
+      const canvases = viewportBox.current?.querySelectorAll("canvas");
+      let snapshot: string | null = null;
+      try {
+        snapshot = canvases?.length ? canvases[canvases.length - 1].toDataURL("image/jpeg", 0.9) : null;
+      } catch {
+        snapshot = null; // the PDF says when no snapshot was included
+      }
+      const pdf = await getBriefing({ sceneKey, date, block: !!blockData, snapshot });
+      const url = URL.createObjectURL(pdf);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ordis-briefing-${(current?.application?.address ?? address).toLowerCase().replace(/[^a-z0-9]+/g, "-")}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setBriefing("idle");
+    } catch {
+      setBriefing("error");
+      setTimeout(() => setBriefing("idle"), 3000);
+    }
+  };
   const heatmap = heatCurrent?.study ? { url: `${API_URL}${heatCurrent.study.png_url}`, extent: heatCurrent.study.extent_m } : null;
 
   useEffect(() => {
@@ -273,16 +301,29 @@ function Viewer() {
             </button>
           ))}
         </div>
-        <button
-          onClick={() => {
-            navigator.clipboard.writeText(window.location.href);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          }}
-          className="text-[12px] text-muted hover:text-ink"
-        >
-          {copied ? "Link copied" : "Share ↗"}
-        </button>
+        <div className="flex items-center gap-5">
+          {ok && (
+            <button
+              onClick={downloadBriefing}
+              disabled={briefing === "busy"}
+              title="One-page PDF to bring to a community meeting: this view, the summary, stated vs estimated, sunlight, meetings and the planner"
+              className={`flex items-center gap-1.5 text-[12px] ${briefing === "error" ? "text-[#a0331c]" : "text-muted hover:text-ink"}`}
+            >
+              <FileDown className="size-3.5" strokeWidth={1.5} />
+              {briefing === "busy" ? "Preparing…" : briefing === "error" ? "Couldn't make the PDF" : "Briefing PDF"}
+            </button>
+          )}
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(window.location.href);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+            className="text-[12px] text-muted hover:text-ink"
+          >
+            {copied ? "Link copied" : "Share ↗"}
+          </button>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1">

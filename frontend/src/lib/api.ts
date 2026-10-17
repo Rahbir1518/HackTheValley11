@@ -173,6 +173,18 @@ export async function getBlock(sceneKey: string): Promise<Block> {
   return data;
 }
 
+/** One-page PDF for a community meeting. `snapshot` is a data URL of the 3D view; everything
+ *  else is assembled by the API from its own records for this scene. */
+export async function getBriefing(params: { sceneKey: string; date: string; block: boolean; snapshot: string | null }): Promise<Blob> {
+  const r = await fetch(`${API_URL}/api/briefing`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scene_key: params.sceneKey, date: params.date, block: params.block, snapshot: params.snapshot }),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => null))?.detail ?? r.statusText);
+  return r.blob();
+}
+
 export interface Health {
   llm: { provider: string; model: string | null; configured: boolean; fallbacks?: string[]; exhausted?: string[] };
   database: boolean;
