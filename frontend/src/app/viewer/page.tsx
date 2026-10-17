@@ -14,12 +14,15 @@ import {
   API_URL,
   getCached,
   getHealth,
+  getSunlight,
   startRun,
   type CachedRun,
   type Health,
   type RunResult,
   type StepEvent,
+  type SunlightStudy,
 } from "@/lib/api";
+import SunlightCard from "@/components/editor/SunlightCard";
 import { buildTree, type SceneNode } from "@/lib/scene";
 import { sunAt, torontoInstant } from "@/lib/sun";
 
@@ -65,6 +68,10 @@ export default function ViewerPage() {
   const [playing, setPlaying] = useState(false);
   const [shadows, setShadows] = useState(true);
   const sun = useMemo(() => sunAt(torontoInstant(date, minutes)), [date, minutes]);
+
+  // Sunlight-lost study for the current scene + date (results keyed so stale ones are ignored).
+  const [heatOn, setHeatOn] = useState(false);
+  const [heat, setHeat] = useState<{ key: string; study?: SunlightStudy; error?: string } | null>(null);
 
   const counter = useRef(0);
   const cancel = useRef<(() => void) | null>(null);
@@ -132,6 +139,21 @@ export default function ViewerPage() {
   }, []);
 
   const glbUrl = result?.ok && result.glb_url ? `${API_URL}${result.glb_url}` : null;
+  const sceneKey = result?.ok ? result.scene_key ?? null : null;
+  const heatKey = heatOn && sceneKey ? `${sceneKey}|${date}` : null;
+  useEffect(() => {
+    if (!heatKey || !sceneKey) return;
+    let cancelled = false;
+    getSunlight(sceneKey, date)
+      .then((study) => !cancelled && setHeat({ key: heatKey, study }))
+      .catch((e) => !cancelled && setHeat({ key: heatKey, error: e instanceof Error ? e.message : String(e) }));
+    return () => {
+      cancelled = true;
+    };
+  }, [heatKey, sceneKey, date]);
+  const heatCurrent = heat && heat.key === heatKey ? heat : null;
+  const heatmap =
+    heatCurrent?.study && showProposal ? { url: `${API_URL}${heatCurrent.study.png_url}`, extent: heatCurrent.study.extent_m } : null;
   const selected = findNode(tree, selectedId);
   const app = result?.application as (RunResult["application"] & { lat?: number; lon?: number }) | undefined;
   const site = app?.lat && app?.lon ? { lat: app.lat, lon: app.lon } : result?.geocode;
@@ -195,6 +217,7 @@ export default function ViewerPage() {
                 <div className="relative min-h-0 flex-1">
                   <Viewport
                     glbUrl={glbUrl}
+                    heatmap={heatmap}
                     showProposal={showProposal}
                     hidden={hidden}
                     selectedId={selectedId}
@@ -216,8 +239,16 @@ export default function ViewerPage() {
                       sun={sun}
                       shadows={shadows}
                       onShadows={setShadows}
+                      heatOn={heatOn}
+                      onHeat={setHeatOn}
+                      heatAvailable={!!sceneKey}
                     />
                   </div>
+                  {heatOn && sceneKey && (
+                    <div className="pointer-events-none absolute bottom-3 left-3">
+                      <SunlightCard study={heatCurrent?.study ?? null} loading={!heatCurrent} error={heatCurrent?.error ?? null} />
+                    </div>
+                  )}
                   {site && (
                     <SiteImagery key={`${site.lat},${site.lon}`} lat={site.lat} lon={site.lon} label={app?.address ?? result?.geocode?.address_full ?? ""} />
                   )}

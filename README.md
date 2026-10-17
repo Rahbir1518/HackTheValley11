@@ -112,6 +112,21 @@ the design principles and a call to action. `/viewer` requires Clerk sign-in (`/
   Narrator's plain-language summary with limitations and source links, nearby applications ("Model this"),
   and development activity in the ward.
 
+### Civic features
+
+- **Sunlight lost** (Sun panel → "Show sunlight lost over this day"): for the chosen date, `backend/sunlight.py`
+  computes the sun every 15 minutes, casts exact 2D ground shadows for every building (footprint swept along the
+  shadow vector), and compares "with proposal" against "today" on a 2.5 m grid. The result is a heatmap draped on
+  the ground plus the most affected spot and lots. Clear sky, flat ground, ground level only; cached per scene
+  and date (`GET /api/sunlight`).
+- **Ask Ordis**: questions answered only from the application text, Ordis's interpretation, 3D Massing neighbours,
+  nearby applications, ward activity and neighbourhood housing, with cited sources (`POST /api/ask`, cached).
+- **Housing**: 2021 Census housing indicators for the neighbourhood (renters, rent, shelter-cost burden,
+  owner-estimated values) ranked against all 158 neighbourhoods, plus homes the proposal adds (`GET /api/housing`).
+  Ordis deliberately shows no sale prices or value predictions: no open data exists and it would not be neutral.
+- **Get involved**: community meetings (with a calendar file), the City planner on the file, and neutral email
+  templates (`GET /api/involved`).
+
 ### Demo mode: caching and pre-warming
 
 - **Saved runs**: every successful run is stored in `output/cache/runs/`. Running the same address again

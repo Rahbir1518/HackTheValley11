@@ -14,6 +14,9 @@ interface Props {
   sun: Sun;
   shadows: boolean;
   onShadows: (s: boolean) => void;
+  heatOn: boolean;
+  onHeat: (v: boolean) => void;
+  heatAvailable: boolean;
 }
 
 const PRESETS: [string, string][] = [
@@ -28,7 +31,20 @@ function hhmm(m: number) {
 }
 
 /** Scene overlay: date + time of day drive the sun (suncalc, Toronto). */
-export default function ShadowTools({ date, minutes, onDate, onMinutes, playing, onPlaying, sun, shadows, onShadows }: Props) {
+export default function ShadowTools({
+  date,
+  minutes,
+  onDate,
+  onMinutes,
+  playing,
+  onPlaying,
+  sun,
+  shadows,
+  onShadows,
+  heatOn,
+  onHeat,
+  heatAvailable,
+}: Props) {
   const { sunrise, sunset } = sunTimes(date);
   const rise = minutesOfDayToronto(sunrise);
   const set = minutesOfDayToronto(sunset);
@@ -97,6 +113,16 @@ export default function ShadowTools({ date, minutes, onDate, onMinutes, playing,
         </span>
         <span>↓ {formatToronto(sunset)}</span>
       </div>
+      <button
+        onClick={() => onHeat(!heatOn)}
+        disabled={!heatAvailable}
+        title="Hours of direct sun the proposal removes at ground level over this whole day"
+        className={`mt-2 w-full rounded border py-1 text-[11px] font-semibold disabled:opacity-40 ${
+          heatOn ? "border-[#7a1a10] bg-[#c2410c] text-white" : "border-ed-border bg-[#4a4a4a] hover:bg-[#565656]"
+        }`}
+      >
+        {heatOn ? "■ Hide sunlight lost" : "◐ Show sunlight lost over this day"}
+      </button>
     </div>
   );
 }

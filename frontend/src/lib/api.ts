@@ -99,6 +99,31 @@ export interface RunResult {
   provider?: { provider: string; model: string | null; configured: boolean };
   seconds?: number;
   cached?: boolean;
+  scene_key?: string;
+}
+
+export interface SunlightStudy {
+  date: string;
+  first: string | null;
+  last: string | null;
+  extent_m: number;
+  png_url: string;
+  stats: {
+    max_hours_lost: number;
+    area_lost_1h_m2: number;
+    area_lost_2h_m2: number;
+    area_lost_any_m2: number;
+    area_gained_1h_m2: number;
+    worst_point: { x: number; y: number; sun_today_h: number; sun_with_h: number };
+  };
+  affected_parcels: { mean_hours_lost: number; max_hours_lost: number; area_m2: number; address?: string }[];
+}
+
+export async function getSunlight(sceneKey: string, date: string): Promise<SunlightStudy> {
+  const r = await fetch(`${API_URL}/api/sunlight?scene_key=${encodeURIComponent(sceneKey)}&date=${date}`);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail ?? r.statusText);
+  return data;
 }
 
 export interface Health {

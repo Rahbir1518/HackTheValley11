@@ -10,6 +10,7 @@ import type { Sun } from "@/lib/sun";
 
 export interface ViewportProps {
   glbUrl: string | null;
+  heatmap: { url: string; extent: number } | null;
   showProposal: boolean;
   hidden: Set<string>;
   selectedId: string | null;
@@ -47,6 +48,7 @@ export default function Viewport(props: ViewportProps) {
         />
       )}
       <Suspense fallback={null}>{props.glbUrl && <Model {...props} glbUrl={props.glbUrl} />}</Suspense>
+      {props.heatmap && <Heatmap {...props.heatmap} />}
       <Controls focusToken={props.focusToken} />
       {process.env.NODE_ENV === "development" && <DebugHandle />}
       <GizmoHelper alignment="bottom-right" margin={[72, 72]}>
@@ -143,6 +145,23 @@ function Model({ glbUrl, showProposal, hidden, selectedId, onSelect, onLoaded }:
       <primitive object={scene} onClick={click} />
       {selected && <SelectionOutline object={selected} />}
     </>
+  );
+}
+
+/** Sunlight-lost raster draped on the ground. The PNG's top row is north; the scene's
+ * local origin (lot centroid) is the raster centre. */
+function Heatmap({ url, extent }: { url: string; extent: number }) {
+  const texture = useMemo(() => {
+    const t = new THREE.TextureLoader().load(url);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }, [url]);
+  useEffect(() => () => texture.dispose(), [texture]);
+  return (
+    <mesh rotation-x={-Math.PI / 2} position={[0, 0.35, 0]} renderOrder={5}>
+      <planeGeometry args={[extent * 2, extent * 2]} />
+      <meshBasicMaterial map={texture} transparent depthWrite={false} toneMapped={false} />
+    </mesh>
   );
 }
 

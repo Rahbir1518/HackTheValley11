@@ -148,6 +148,44 @@ def housing(app_number: str):
     return ctx
 
 
+@app.get("/api/sunlight")
+def sunlight_study(scene_key: str, date: str):
+    """Hours of ground-level direct sun lost/gained for a built scene on one day (cached)."""
+    import datetime as dt
+
+    from . import sunlight
+
+    scenes = (orchestrator.CACHE / "scenes").resolve()
+    scene_dir = (scenes / scene_key).resolve()
+    if scene_dir.parent != scenes or not (scene_dir / "plan.json").exists():
+        raise HTTPException(404, "unknown scene")
+    try:
+        day = dt.date.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(400, "date must be YYYY-MM-DD")
+    try:
+        res = sunlight.run(scene_dir, day)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    # Name the most affected lots with the nearest City address point.
+    if res["affected_parcels"] and "named" not in res:
+        db = store.connect()
+        app_ = store.get_application(db, res["application_id"])
+        ox, oy = store.find_lot(db, app_).origin
+        pts = [(p["x"] + ox, p["y"] + oy) for p in res["affected_parcels"]]
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        rows = db.execute("SELECT address_full, x, y FROM address_points WHERE x BETWEEN ? AND ? AND y BETWEEN ? AND ?",
+                          (min(xs) - 40, max(xs) + 40, min(ys) - 40, max(ys) + 40)).fetchall()
+        for p, (px, py) in zip(res["affected_parcels"], pts):
+            near = min(rows, key=lambda r: (r["x"] - px) ** 2 + (r["y"] - py) ** 2, default=None)
+            if near is not None and ((near["x"] - px) ** 2 + (near["y"] - py) ** 2) ** 0.5 < 60:
+                p["address"] = near["address_full"]
+        res["named"] = True
+        (scene_dir / f"sun_{day.isoformat()}.json").write_text(json.dumps({k: v for k, v in res.items() if k != "cached"}))
+    return res | {"png_url": f"/files/scenes/{scene_key}/sun_{day.isoformat()}.png"}
+
+
 class AskRequest(BaseModel):
     app_number: str
     question: str = Field(min_length=2, max_length=500)
