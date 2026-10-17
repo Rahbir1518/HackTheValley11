@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Box,
   Building2,
@@ -191,22 +191,24 @@ export function SelectedObject({ node }: { node: SceneNode | null }) {
 
 // ------------------------------------------------------------------ overview / evidence
 
-export type Section = "overview" | "evidence" | "nearby" | "imagery" | "involved";
+export type Section = "overview" | "evidence" | "nearby" | "involved";
 
 export function ProposalPanel({
   result,
   section,
   onSection,
+  onOpenImagery,
 }: {
   result: RunResult;
   section: Section;
   onSection: (s: Section) => void;
+  onOpenImagery: () => void;
 }) {
   const spec = result.spec;
   const app = result.application;
   const n = result.narration;
-  if (section === "nearby" || section === "imagery" || section === "involved") {
-    const titles = { nearby: "Nearby & ward context", imagery: "Site imagery", involved: "Get involved" };
+  if (section === "nearby" || section === "involved") {
+    const titles = { nearby: "Nearby & ward context", involved: "Get involved" };
     return (
       <div className="space-y-4">
         <button onClick={() => onSection("overview")} className="text-[12px] text-prop-ink">
@@ -214,7 +216,6 @@ export function ProposalPanel({
         </button>
         <p className="text-[18px] text-black">{titles[section]}</p>
         {section === "nearby" && <NearbyContext result={result} />}
-        {section === "imagery" && <Imagery result={result} />}
         {section === "involved" && app && <Involved appNumber={app.app_number} />}
       </div>
     );
@@ -273,11 +274,15 @@ export function ProposalPanel({
               [
                 ["evidence", "Evidence & assumptions", "Application text and model rules"],
                 ["nearby", "Nearby & ward context", "Applications, housing and your ward"],
-                ["imagery", "Site imagery", "See the existing surroundings"],
+                ["imagery", "Site imagery", "Aerial photo and Street View, in a window"],
                 ["involved", "Get involved", "How to participate in the process"],
               ] as const
             ).map(([key, title, sub]) => (
-              <button key={key} onClick={() => onSection(key)} className="flex w-full items-center justify-between border-b border-line py-2.5 text-left">
+              <button
+                key={key}
+                onClick={() => (key === "imagery" ? onOpenImagery() : onSection(key))}
+                className="flex w-full items-center justify-between border-b border-line py-2.5 text-left"
+              >
                 <span>
                   <span className="block text-[11px] font-medium text-black">{title}</span>
                   <span className="block text-[9px] text-muted">{sub}</span>
@@ -445,44 +450,97 @@ function NearbyContext({ result }: { result: RunResult }) {
 
 const EMBED_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY;
 
-function Imagery({ result }: { result: RunResult }) {
+export function siteLocation(result: RunResult): { lat: number; lon: number } | null {
   const app = result.application as (RunResult["application"] & { lat?: number; lon?: number }) | undefined;
   const lat = app?.lat ?? result.geocode?.lat;
   const lon = app?.lon ?? result.geocode?.lon;
-  const [tab, setTab] = useState<"aerial" | "street">("aerial");
-  if (lat == null || lon == null) return null;
+  return lat != null && lon != null ? { lat, lon } : null;
+}
+
+/** Real imagery of the site in a floating window over the 3D view: drag the header to move,
+ *  drag the corner to resize, collapse or close. Aerial is keyless (Esri); Street needs a Maps Embed key. */
+export function SiteImageryWindow({ lat, lon, label, onClose }: { lat: number; lon: number; label: string; onClose: () => void }) {
+  const [tab, setTab] = useState<"aerial" | "street">(EMBED_KEY ? "street" : "aerial");
+  const [pos, setPos] = useState({ right: 16, top: 18 });
+  const [collapsed, setCollapsed] = useState(false);
+  const drag = useRef<{ x: number; y: number; right: number; top: number } | null>(null);
   const dLat = 170 / 111_320;
   const dLon = 170 / (111_320 * Math.cos((lat * Math.PI) / 180));
   const aerial =
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?" +
     new URLSearchParams({ bbox: `${lon - dLon},${lat - dLat},${lon + dLon},${lat + dLat}`, bboxSR: "4326", imageSR: "3857", size: "640,640", format: "jpg", f: "image" });
   return (
-    <div className="space-y-2">
-      <div className="flex gap-1 rounded-md bg-soft p-[3px] text-[11px]">
-        {(["aerial", "street"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={`flex-1 rounded py-1 ${tab === t ? "bg-white text-prop-ink" : "text-muted"}`}>
-            {t === "aerial" ? "Aerial" : "Street"}
-          </button>
-        ))}
-      </div>
-      <div className="relative aspect-square overflow-hidden rounded-md bg-soft">
-        {tab === "aerial" ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={aerial} alt="Aerial photo of the site" className="size-full object-cover" />
-            <span className="absolute left-1/2 top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-prop-ink" />
-          </>
-        ) : EMBED_KEY ? (
-          <iframe title="Street View" src={`https://www.google.com/maps/embed/v1/streetview?key=${EMBED_KEY}&location=${lat},${lon}&fov=90`} className="size-full border-0" />
-        ) : (
-          <div className="grid size-full place-items-center p-4 text-center text-[11px] text-muted">
-            <a href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lon}`} target="_blank" rel="noreferrer" className="rounded-full bg-ink px-4 py-2 text-white">
-              Open in Street View ↗
-            </a>
+    <div
+      className="absolute z-20 flex flex-col overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_24px_rgba(35,53,44,0.10)]"
+      style={{
+        right: pos.right,
+        top: pos.top,
+        width: 300,
+        height: collapsed ? "auto" : 300,
+        minWidth: 220,
+        minHeight: collapsed ? 0 : 180,
+        resize: collapsed ? "none" : "both",
+        direction: "rtl", // native resize grip on the left, away from the viewport edge
+      }}
+    >
+      <div style={{ direction: "ltr" }} className="flex h-full flex-col">
+        <div
+          className="flex h-9 shrink-0 cursor-move select-none items-center gap-2 border-b border-line px-3"
+          onPointerDown={(e) => {
+            drag.current = { x: e.clientX, y: e.clientY, ...pos };
+            (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          }}
+          onPointerMove={(e) => {
+            if (!drag.current) return;
+            setPos({
+              right: Math.max(0, drag.current.right - (e.clientX - drag.current.x)),
+              top: Math.max(0, drag.current.top + (e.clientY - drag.current.y)),
+            });
+          }}
+          onPointerUp={() => (drag.current = null)}
+        >
+          <span className="shrink-0 whitespace-nowrap text-[11px] text-black">Site imagery</span>
+          <span className="min-w-0 truncate text-[10px] text-muted">{label}</span>
+          <div className="ml-auto flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="flex rounded-md bg-soft p-0.5 text-[10px]">
+              {(["aerial", "street"] as const).map((t) => (
+                <button key={t} onClick={() => setTab(t)} className={`rounded px-2 py-0.5 ${tab === t ? "bg-white text-prop-ink" : "text-muted"}`}>
+                  {t === "aerial" ? "Aerial" : "Street"}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setCollapsed(!collapsed)} aria-label={collapsed ? "Expand" : "Collapse"} className="px-1 text-[11px] text-muted hover:text-ink">
+              {collapsed ? "▾" : "▴"}
+            </button>
+            <button onClick={onClose} aria-label="Close" className="px-1 text-[13px] text-muted hover:text-ink">
+              ×
+            </button>
+          </div>
+        </div>
+        {!collapsed && (
+          <div className="relative min-h-0 flex-1 bg-soft">
+            {tab === "aerial" ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={aerial} alt="Aerial photo of the site" className="size-full object-cover" />
+                <span className="absolute left-1/2 top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-prop-ink" />
+                <span className="absolute bottom-0 right-0 bg-black/50 px-1.5 text-[9px] text-white/90">Imagery: Esri, Maxar, Earthstar Geographics</span>
+              </>
+            ) : EMBED_KEY ? (
+              <iframe title="Street View" src={`https://www.google.com/maps/embed/v1/streetview?key=${EMBED_KEY}&location=${lat},${lon}&fov=90`} className="size-full border-0" />
+            ) : (
+              <div className="grid size-full place-items-center p-4 text-center text-[11px] text-muted">
+                <div className="space-y-3">
+                  <p>Add NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY to show Street View here.</p>
+                  <a href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${lat},${lon}`} target="_blank" rel="noreferrer" className="inline-block rounded-full bg-ink px-4 py-2 text-white">
+                    Open in Street View ↗
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
-      <p className="text-[10px] text-muted">{tab === "aerial" ? "Imagery: Esri, Maxar, Earthstar Geographics" : "Google Street View"}</p>
     </div>
   );
 }
@@ -810,35 +868,52 @@ const STEPS: [Agent, string][] = [
   ["narrator", "Explain"],
 ];
 
-export function AgentProgress({ events, failed }: { events: StepEvent[]; failed: string | null }) {
+/** Five agent steps. While running, the current step pulses; when a run stops, the step it
+ *  stopped at is marked and the later steps are shown as skipped, so it never looks stuck. */
+export function AgentProgress({ events, failed, children }: { events: StepEvent[]; failed: string | null; children?: React.ReactNode }) {
   const [details, setDetails] = useState(false);
   const seen = new Set(events.map((e) => e.agent));
   const done = events.some((e) => e.kind === "done");
   const current = [...STEPS].reverse().find(([a]) => seen.has(a))?.[0];
+  const stopIdx = failed ? Math.max(0, STEPS.findIndex(([a]) => a === current)) : -1;
+  const stopLabel = stopIdx >= 0 ? STEPS[stopIdx][1] : "";
   return (
-    <div className="w-[420px] rounded-xl border border-line bg-white p-6 shadow-[0_8px_24px_rgba(35,53,44,0.06)]">
-      <div className="flex items-center gap-3">
+    <div className="w-[440px] rounded-xl border border-line bg-white p-6 shadow-[0_8px_24px_rgba(35,53,44,0.06)]">
+      <div className="flex items-start gap-3">
         <Ordi size={34} mood={failed ? "tilt" : "thinking"} />
         <div>
-          <p className="text-[15px] text-black">{failed ? "Ordis couldn't build this one." : "Ordis is reading the City's records…"}</p>
-          <p className="text-[11px] text-muted">{failed ?? "This usually takes a few seconds for saved places."}</p>
+          <p className="text-[15px] text-black">{failed ? `Ordis stopped at “${stopLabel}”.` : "Ordis is reading the City's records…"}</p>
+          <p className="mt-0.5 text-[11px] leading-[1.5] text-muted">
+            {failed ?? "Saved places load in a few seconds; new ones can take a minute."}
+          </p>
         </div>
       </div>
       <div className="mt-5 space-y-2.5">
         {STEPS.map(([agent, label], i) => {
-          const isDone = done || (seen.has(agent) && agent !== current);
-          const active = !done && agent === current && !failed;
+          const stopped = failed && i === stopIdx;
+          const skipped = failed && i > stopIdx;
+          const isDone = done || (failed ? i < stopIdx : seen.has(agent) && agent !== current);
+          const active = !failed && !done && agent === current;
           return (
             <div key={agent} className="flex items-center gap-3 text-[12px]">
-              <span className={`grid size-5 place-items-center rounded-full ${isDone ? "bg-prop-ink text-white" : active ? "border border-prop-ink" : "border border-line"}`}>
-                {isDone ? <Check className="size-3" /> : <span className={`text-[9px] ${active ? "text-prop-ink" : "text-muted"}`}>{i + 1}</span>}
+              <span
+                className={`grid size-5 place-items-center rounded-full ${
+                  isDone ? "bg-prop-ink text-white" : stopped ? "bg-[#fbe9e4] text-[#a0331c]" : active ? "border border-prop-ink" : "border border-line"
+                }`}
+              >
+                {isDone ? <Check className="size-3" /> : stopped ? <span className="text-[11px]">!</span> : <span className={`text-[9px] ${active ? "text-prop-ink" : "text-muted"}`}>{i + 1}</span>}
               </span>
-              <span className={isDone ? "text-black" : active ? "text-prop-ink" : "text-muted"}>{label}</span>
+              <span className={isDone ? "text-black" : stopped ? "text-[#a0331c]" : active ? "text-prop-ink" : skipped ? "text-muted/60 line-through" : "text-muted"}>
+                {label}
+              </span>
               {active && <span className="ml-auto animate-pulse text-[10px] text-muted">working</span>}
+              {stopped && <span className="ml-auto text-[10px] text-[#a0331c]">stopped here</span>}
+              {skipped && <span className="ml-auto text-[10px] text-muted/70">skipped</span>}
             </div>
           );
         })}
       </div>
+      {children}
       <button onClick={() => setDetails(!details)} className="mt-5 text-[11px] text-muted hover:text-ink">
         {details ? "Hide details" : "Show details"}
       </button>

@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Box, Maximize, MousePointer2, Move, Rotate3d } from "lucide-react";
+import { ArrowLeft, Box, Image as ImageIcon, Maximize, MousePointer2, Move, Rotate3d } from "lucide-react";
 import * as THREE from "three";
 import AppNav from "@/components/AppNav";
 import { Ordi, StatusChip } from "@/components/brand";
@@ -14,6 +14,8 @@ import {
   SceneCollection,
   type Section,
   SelectedObject,
+  SiteImageryWindow,
+  siteLocation,
   StatusBar,
   SunlightPanel,
   SunTimeline,
@@ -86,6 +88,7 @@ function Viewer() {
   const [section, setSection] = useState<Section>("overview");
   const [sceneCollapsed, setSceneCollapsed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [imageryOpen, setImageryOpen] = useState(true);
   const viewportBox = useRef<HTMLDivElement>(null);
   const sync = useRef<CameraSync>({ pos: new THREE.Vector3(), target: new THREE.Vector3(), version: 0, owner: "a" });
 
@@ -240,6 +243,12 @@ function Viewer() {
                 : segmented([["existing", "Existing"], ["with", "With proposal"]], showProposal ? "with" : "existing", (v) => setShowProposal(v === "with"))}
             </div>
             <div className="relative flex items-center gap-4">
+              {ok && (
+                <button onClick={() => setImageryOpen(!imageryOpen)} className={`flex items-center gap-1.5 text-[11px] ${imageryOpen ? "text-prop-ink" : "text-muted hover:text-ink"}`}>
+                  <ImageIcon className="size-3.5" strokeWidth={1.5} />
+                  Site imagery
+                </button>
+              )}
               <button onClick={() => setLayersOpen(!layersOpen)} className="text-[11px] text-muted hover:text-ink">
                 Layers⌄
               </button>
@@ -336,12 +345,49 @@ function Viewer() {
               </>
             )}
 
+            {ok && imageryOpen && current && siteLocation(current) && (
+              <SiteImageryWindow
+                {...siteLocation(current)!}
+                label={current.geocode?.address_full ?? address}
+                onClose={() => setImageryOpen(false)}
+              />
+            )}
+
             {!ok && (
-              <div className="absolute inset-0 grid place-items-center">
+              <div className="absolute inset-0 grid place-items-center overflow-auto py-6">
                 <AgentProgress
                   events={events}
                   failed={error ?? (current && !current.ok ? current.message ?? "No model was built." : null)}
-                />
+                >
+                  {current && !current.ok && (
+                    <div className="mt-5 space-y-2 border-t border-line pt-4">
+                      {(() => {
+                        const shown = current.application?.app_number ?? appNumber;
+                        const others = (current.candidates ?? []).filter((c) => c.modelled && c.app_number !== shown).slice(0, 3);
+                        return others.length ? (
+                          <>
+                            <p className="mono text-[9px] text-muted">TRY ANOTHER PROPOSAL NEARBY</p>
+                            {others.map((c) => (
+                              <Link
+                                key={c.app_number}
+                                href={`/viewer?address=${encodeURIComponent(address)}&app=${encodeURIComponent(c.app_number)}`}
+                                className="flex items-center justify-between rounded-md border border-line px-3 py-2 text-[12px] hover:bg-side"
+                              >
+                                <span className="text-black">{c.address}</span>
+                                <span className="text-[10px] text-muted">
+                                  {Math.round(c.distance_m)} m · View in 3D →
+                                </span>
+                              </Link>
+                            ))}
+                          </>
+                        ) : null;
+                      })()}
+                      <Link href="/ask" className="inline-block pt-1 text-[12px] text-prop-ink">
+                        ← Back to Ask Ordis
+                      </Link>
+                    </div>
+                  )}
+                </AgentProgress>
               </div>
             )}
           </div>
@@ -410,7 +456,26 @@ function Viewer() {
               <div className="space-y-4 p-5">
                 <SelectedObject node={selected} />
                 {current?.ok ? (
-                  <ProposalPanel result={current} section={section} onSection={setSection} />
+                  <ProposalPanel result={current} section={section} onSection={setSection} onOpenImagery={() => setImageryOpen(true)} />
+                ) : current?.application ? (
+                  // Not modelled, but the application itself is still worth reading.
+                  <div className="space-y-3">
+                    <StatusChip>{current.application.status}</StatusChip>
+                    <p className="text-[18px] leading-tight text-black">{current.application.address}</p>
+                    <p className="text-[11px] text-muted">
+                      {current.application.type_name} · submitted {(current.application.date_submitted ?? "").slice(0, 10)}
+                    </p>
+                    <p className="mono text-[10px] text-black">{current.application.app_number}</p>
+                    {current.application.description && (
+                      <p className="text-[12px] leading-[1.6] text-muted">{current.application.description}</p>
+                    )}
+                    {current.application.application_url && (
+                      <a href={current.application.application_url} target="_blank" rel="noreferrer" className="block text-[11px] text-prop-ink hover:underline">
+                        Application Information Centre ↗
+                      </a>
+                    )}
+                    <p className="rounded-md bg-side p-3 text-[11px] leading-[1.6] text-muted">{current.message}</p>
+                  </div>
                 ) : (
                   <p className="text-[12px] leading-[1.6] text-muted">
                     {current && !current.ok ? current.message : "The proposal's details appear here once the model is ready."}

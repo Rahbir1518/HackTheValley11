@@ -50,6 +50,21 @@ _SUFFIX_RE = re.compile(r"\b(\d+[A-Za-z]?\s+(?:[A-Za-z'.-]+\s+){0,3}?(?:" + "|".
     set(SUFFIXES) | set(SUFFIXES.values()), key=len, reverse=True)) + r"))\b", re.I)
 
 
+# Nearby municipalities people often mean; Ordis only has City of Toronto data.
+# (Scarborough, North York, Etobicoke, East York and York are part of Toronto.)
+OTHER_MUNICIPALITIES = [
+    "Markham", "Mississauga", "Vaughan", "Brampton", "Richmond Hill", "Pickering", "Ajax", "Whitby", "Oshawa",
+    "Oakville", "Burlington", "Milton", "Halton Hills", "Caledon", "Newmarket", "Aurora", "King City",
+    "Stouffville", "Whitchurch-Stouffville", "Uxbridge", "Hamilton", "Ottawa", "Guelph", "Kitchener", "Waterloo",
+]
+_OTHER_RE = re.compile(r"\b(" + "|".join(re.escape(m) for m in OTHER_MUNICIPALITIES) + r")\b", re.I)
+
+
+def outside_toronto(text: str) -> str | None:
+    m = _OTHER_RE.search(text)
+    return next(x for x in OTHER_MUNICIPALITIES if x.lower() == m.group(1).lower()) if m else None
+
+
 def looks_like_address(text: str) -> str | None:
     """A 'number + street + street-type' phrase (e.g. '1 Nowhere Lane') even if it doesn't geocode."""
     m = _SUFFIX_RE.search(text)
@@ -119,6 +134,13 @@ GENERAL_SYSTEM = (
 
 async def handle(message: str, place: dict | None, include_closed: bool, history: list[dict]) -> dict:
     db = store.connect()
+    other = outside_toronto(message)
+    if other:
+        return {"type": "answer", "general": False, "answerable": False, "citations": [], "sources": {},
+                "answer": f"{other} is outside the City of Toronto, so Ordis doesn't have its data. Ordis uses the City "
+                          f"of Toronto's open data (addresses, development applications, property lines and 3D buildings), "
+                          f"which only covers Toronto, including Scarborough, North York, Etobicoke and East York. "
+                          f"For {other}, check that municipality's own development application map."}
     addr = find_address(db, message)
     if addr:
         return proposals(db, addr, include_closed)

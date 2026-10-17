@@ -21,6 +21,12 @@ def test_ignores_numbers_that_are_not_addresses(db):
     assert chat.find_address(db, "What changed in 2024 for 3 storey buildings?") is None
 
 
+def test_other_municipalities_are_flagged():
+    assert chat.outside_toronto("proposals near 130 Maple Ridge Cres, Markham, ON") == "Markham"
+    assert chat.outside_toronto("what's near 5 Main St, richmond hill") == "Richmond Hill"
+    assert chat.outside_toronto("proposals near 2 Bloor St in North York") is None
+
+
 def test_unknown_street_is_recognised_as_an_address_attempt():
     assert chat.looks_like_address("proposals near 1 Nowhere Lane") == "1 Nowhere Lane"
     assert chat.looks_like_address("what does a rezoning application mean?") is None
