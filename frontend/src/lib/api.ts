@@ -98,10 +98,11 @@ export interface RunResult {
   limitations?: string[];
   provider?: { provider: string; model: string | null; configured: boolean };
   seconds?: number;
+  cached?: boolean;
 }
 
 export interface Health {
-  llm: { provider: string; model: string | null; configured: boolean };
+  llm: { provider: string; model: string | null; configured: boolean; fallbacks?: string[]; exhausted?: string[] };
   database: boolean;
   blender: boolean;
 }
@@ -115,15 +116,34 @@ export async function getHealth(): Promise<Health | null> {
   }
 }
 
+export interface CachedRun {
+  address: string;
+  app_number: string | null;
+  include_closed: boolean;
+  application: string | null;
+  headline: string | null;
+  saved_at: string;
+}
+
+export async function getCached(): Promise<CachedRun[]> {
+  try {
+    const r = await fetch(`${API_URL}/api/cached`);
+    return r.ok ? r.json() : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Starts a pipeline run; returns a function that cancels it. */
 export function startRun(
-  params: { address: string; appNumber?: string; includeClosed: boolean },
+  params: { address: string; appNumber?: string; includeClosed: boolean; fresh?: boolean },
   onStep: (e: Omit<StepEvent, "id" | "time">) => void,
   onResult: (r: RunResult) => void,
   onError: (msg: string) => void,
 ): () => void {
   const q = new URLSearchParams({ address: params.address, include_closed: String(params.includeClosed) });
   if (params.appNumber) q.set("app_number", params.appNumber);
+  if (params.fresh) q.set("fresh", "true");
   const es = new EventSource(`${API_URL}/api/run?${q}`);
   let finished = false;
   es.addEventListener("step", (ev) => onStep(JSON.parse((ev as MessageEvent).data)));

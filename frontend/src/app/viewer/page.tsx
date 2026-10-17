@@ -10,7 +10,16 @@ import Inspector from "@/components/editor/Inspector";
 import ShadowTools from "@/components/editor/ShadowTools";
 import SiteImagery from "@/components/editor/SiteImagery";
 import Toolbar from "@/components/editor/Toolbar";
-import { API_URL, getHealth, startRun, type Health, type RunResult, type StepEvent } from "@/lib/api";
+import {
+  API_URL,
+  getCached,
+  getHealth,
+  startRun,
+  type CachedRun,
+  type Health,
+  type RunResult,
+  type StepEvent,
+} from "@/lib/api";
 import { buildTree, type SceneNode } from "@/lib/scene";
 import { sunAt, torontoInstant } from "@/lib/sun";
 
@@ -42,6 +51,7 @@ export default function ViewerPage() {
   const [events, setEvents] = useState<StepEvent[]>([]);
   const [result, setResult] = useState<RunResult | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
+  const [cached, setCached] = useState<CachedRun[]>([]);
 
   const [tree, setTree] = useState<SceneNode[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -61,6 +71,7 @@ export default function ViewerPage() {
 
   useEffect(() => {
     getHealth().then(setHealth);
+    getCached().then(setCached);
   }, []);
 
   // T toggles the proposal, F frames it (ignored while typing).
@@ -76,8 +87,10 @@ export default function ViewerPage() {
   }, []);
 
   const run = useCallback(
-    (appNumber?: string) => {
-      if (!address.trim()) return;
+    (appNumber?: string, opts: { address?: string; includeClosed?: boolean; fresh?: boolean } = {}) => {
+      const addr = opts.address ?? address;
+      const closed = opts.includeClosed ?? includeClosed;
+      if (!addr.trim()) return;
       cancel.current?.();
       setRunning(true);
       setSelectedId(null);
@@ -86,9 +99,14 @@ export default function ViewerPage() {
           ...prev,
           { ...e, id: ++counter.current, time: new Date().toLocaleTimeString("en-CA", { hour12: false }) },
         ]);
-      push({ agent: "system", kind: "start", message: `Run for "${address}"${appNumber ? ` (${appNumber})` : ""}`, data: null });
+      push({
+        agent: "system",
+        kind: "start",
+        message: `Run for "${addr}"${appNumber ? ` (${appNumber})` : ""}${opts.fresh ? " (fresh, ignoring saved result)" : ""}`,
+        data: null,
+      });
       cancel.current = startRun(
-        { address, appNumber, includeClosed },
+        { address: addr, appNumber, includeClosed: closed, fresh: opts.fresh },
         push,
         (r) => {
           setResult(r);
@@ -96,6 +114,7 @@ export default function ViewerPage() {
           if (r.ok) {
             setHidden(new Set());
             setShowProposal(true);
+            getCached().then(setCached);
           }
         },
         (msg) => {
@@ -123,6 +142,13 @@ export default function ViewerPage() {
         address={address}
         onAddress={setAddress}
         onRun={() => run()}
+        onRunFresh={() => run(undefined, { fresh: true })}
+        cached={cached}
+        onPickCached={(c) => {
+          setAddress(c.address);
+          setIncludeClosed(c.include_closed);
+          run(c.app_number ?? undefined, { address: c.address, includeClosed: c.include_closed });
+        }}
         running={running}
         includeClosed={includeClosed}
         onIncludeClosed={setIncludeClosed}

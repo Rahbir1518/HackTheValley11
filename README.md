@@ -112,6 +112,17 @@ the design principles and a call to action. `/viewer` requires Clerk sign-in (`/
   Narrator's plain-language summary with limitations and source links, nearby applications ("Model this"),
   and development activity in the ward.
 
+### Demo mode: caching and pre-warming
+
+- **Saved runs**: every successful run is stored in `output/cache/runs/`. Running the same address again
+  replays it instantly (the console still animates through each agent step) with no AI calls. The toolbar's
+  **⚡ Saved** menu lists them; **↻** next to Run forces a fresh run.
+- **Pre-warm** your demo list (`demo_addresses.txt`) before presenting:
+  `backend/.venv/Scripts/python -m backend.warm` (add `--fresh` to redo them).
+- **Provider fallback**: free tiers are small (Gemini Flash allows ~20 requests/day per model; one run uses
+  ~4). With `LLM_FALLBACKS=groq,openrouter`, a quota error switches to the next provider with a key, and the
+  console says so.
+
 ### Build plan format
 
 ```json

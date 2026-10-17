@@ -5,6 +5,8 @@
 GET /api/health            provider, database and Blender status
 GET /api/applications      geocode + nearby applications (for picking one)
 GET /api/run               Server-Sent Events: one `event` per agent step, then `result`
+                           (saved runs are replayed instantly; fresh=true forces a new run)
+GET /api/cached            addresses with a saved run, for the demo picker
 GET /api/ward              application counts for a ward
 GET /api/sources           dataset links and refresh dates
 GET /files/scenes/...      built .glb / preview .png
@@ -71,8 +73,14 @@ def _sse(event: str, data) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+@app.get("/api/cached")
+def cached():
+    """Addresses with a saved run (instant replay), newest first."""
+    return orchestrator.cached_runs()
+
+
 @app.get("/api/run")
-async def run(address: str, app_number: str | None = None, include_closed: bool = False):
+async def run(address: str, app_number: str | None = None, include_closed: bool = False, fresh: bool = False):
     queue: asyncio.Queue = asyncio.Queue()
 
     async def emit(agent, kind, message, data):
@@ -80,7 +88,7 @@ async def run(address: str, app_number: str | None = None, include_closed: bool 
 
     async def task():
         try:
-            result = await orchestrator.run(address, emit, app_number, include_closed)
+            result = await orchestrator.run(address, emit, app_number, include_closed, fresh=fresh)
         except (store.DataError, BlenderError) as e:
             result = {"ok": False, "message": str(e)}
         except Exception as e:  # report instead of dropping the stream

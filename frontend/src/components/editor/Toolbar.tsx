@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
-import type { Health } from "@/lib/api";
+import type { CachedRun, Health } from "@/lib/api";
 import { clerkEnabled } from "@/lib/auth-config";
 import { ToolButton } from "./ui";
 
@@ -10,6 +10,9 @@ interface Props {
   address: string;
   onAddress: (a: string) => void;
   onRun: () => void;
+  onRunFresh: () => void;
+  cached: CachedRun[];
+  onPickCached: (c: CachedRun) => void;
   running: boolean;
   includeClosed: boolean;
   onIncludeClosed: (v: boolean) => void;
@@ -27,7 +30,9 @@ export default function Toolbar(p: Props) {
   const ok = !!p.health && llm?.configured && p.health.database && p.health.blender;
   const statusText = !p.health
     ? "API offline"
-    : `${llm?.provider ?? "?"} · ${llm?.model ?? "?"}${llm?.configured ? "" : " (no key)"}${p.health.blender ? "" : " · no Blender"}`;
+    : `${llm?.provider ?? "?"} · ${llm?.model ?? "?"}${llm?.configured ? "" : " (no key)"}` +
+      `${llm?.exhausted?.includes(llm.provider) ? " (quota used)" : ""}` +
+      `${llm?.fallbacks?.length ? ` → ${llm.fallbacks.join(", ")}` : ""}${p.health.blender ? "" : " · no Blender"}`;
   return (
     <div className="flex h-10 shrink-0 items-center gap-2 border-b border-ed-border bg-ed-header px-2 text-[11px] text-ed-text">
       <Link href="/" className="flex items-center gap-1.5 pr-2 font-semibold tracking-wide text-white">
@@ -55,7 +60,30 @@ export default function Toolbar(p: Props) {
         >
           {p.running ? "■ Running" : "▶ Run"}
         </button>
+        <ToolButton onClick={p.onRunFresh} disabled={p.running || !p.address.trim()} title="Run again without the saved result (calls the AI)">
+          ↻
+        </ToolButton>
       </form>
+      {p.cached.length > 0 && (
+        <select
+          value=""
+          disabled={p.running}
+          onChange={(e) => {
+            const c = p.cached[Number(e.target.value)];
+            if (c) p.onPickCached(c);
+          }}
+          className="h-6 max-w-44 rounded border border-ed-border bg-[#4a4a4a] px-1 text-ed-text outline-none"
+          title="Saved runs replay instantly"
+        >
+          <option value="">⚡ Saved ({p.cached.length})</option>
+          {p.cached.map((c, i) => (
+            <option key={`${c.address}-${c.app_number}-${c.include_closed}`} value={i}>
+              {c.address}
+              {c.application ? ` · ${c.application}` : ""}
+            </option>
+          ))}
+        </select>
+      )}
       <label className="flex items-center gap-1 text-ed-dim" title="Include closed, refused and withdrawn applications">
         <input type="checkbox" checked={p.includeClosed} onChange={(e) => p.onIncludeClosed(e.target.checked)} className="accent-ed-select" />
         closed apps

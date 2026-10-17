@@ -6,6 +6,7 @@
 import argparse
 import asyncio
 import json
+import sys
 
 from dotenv import load_dotenv
 
@@ -36,5 +37,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
     load_dotenv()
     asyncio.run(main())
