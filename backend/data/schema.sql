@@ -56,6 +56,14 @@ CREATE TABLE IF NOT EXISTS buildings (
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS buildings_idx USING rtree(id, minx, maxx, miny, maxy);
 
+CREATE TABLE IF NOT EXISTS street_trees (
+    id INTEGER PRIMARY KEY,
+    common_name TEXT,
+    dbh_cm INTEGER,                   -- trunk diameter at breast height
+    x REAL, y REAL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS street_trees_idx USING rtree(id, minx, maxx, miny, maxy);
+
 CREATE TABLE IF NOT EXISTS address_points (
     id INTEGER PRIMARY KEY,
     address_full TEXT,

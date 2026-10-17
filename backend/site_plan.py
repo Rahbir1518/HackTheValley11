@@ -27,13 +27,17 @@ def cmd_apps(args):
         print(f"No development applications within {args.radius} m.")
 
 
-def build_plan(db, app: dict, podium_storeys: int, storeys: int, setback: float,
+def build_plan(db, app: dict, podium_storeys: int, storeys: int, setback: float, floorplate: float | None = 750,
                podium_storey_h: float = 4.5, storey_h: float = 3.1, radius: float = 250) -> dict:
     site = store.find_lot(db, app)
     buildings = store.context_buildings(db, site, radius)
     lot_ring = store.local_ring(site.lot, site.origin)
     steps = [
+        {"tool": "create_ground", "args": {"size_m": radius * 2 + 100}},
+        {"tool": "load_context_parcels",
+         "args": {"geojson": store.parcels_geojson(store.context_parcels(db, site, radius), site.origin)}},
         {"tool": "load_context_buildings", "args": {"geojson": store.context_geojson(buildings, site.origin)}},
+        {"tool": "load_street_trees", "args": {"trees": store.context_trees(db, site, radius)}},
         {"tool": "create_lot", "args": {"polygon": lot_ring}},
     ]
     base = None
@@ -44,7 +48,8 @@ def build_plan(db, app: dict, podium_storeys: int, storeys: int, setback: float,
     tower_storeys = storeys - podium_storeys
     if tower_storeys > 0:
         steps.append({"tool": "add_tower", "args": {"name": "Tower", "base": base or "Lot", "storeys": tower_storeys,
-                                                    "storey_height": storey_h, "setback_m": setback}})
+                                                    "storey_height": storey_h, "setback_m": setback,
+                                                    "max_floorplate_m2": floorplate}})
         steps.append({"tool": "add_floor_lines", "args": {"target": "Tower"}})
     return {
         "version": 1,
@@ -65,12 +70,13 @@ def cmd_plan(args):
         if not apps:
             raise SystemExit("No OZ/SA application within 300 m; pass --app explicitly.")
         app = apps[0]
-    plan = build_plan(db, app, args.podium, args.storeys, args.setback)
+    plan = build_plan(db, app, args.podium, args.storeys, args.setback, args.floorplate or None)
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(plan, indent=1))
-    n = len(plan["steps"][0]["args"]["geojson"]["features"])
-    print(f"Wrote {out}: application {app['app_number']}, {n} context buildings, notes: {plan['metadata']['notes']}")
+    counts = {s["tool"]: len(s["args"].get("geojson", {}).get("features", s["args"].get("trees", [])))
+              for s in plan["steps"] if s["tool"].startswith("load_")}
+    print(f"Wrote {out}: application {app['app_number']}, {counts}, notes: {plan['metadata']['notes']}")
 
 
 def main():
@@ -86,6 +92,8 @@ def main():
     p.add_argument("--podium", type=int, default=0, help="podium storeys (0 = none)")
     p.add_argument("--storeys", type=int, required=True, help="total storeys")
     p.add_argument("--setback", type=float, default=3.0, help="tower setback from podium edge (m)")
+    p.add_argument("--floorplate", type=float, default=750,
+                   help="max tower floorplate m2 (Toronto Tall Building Guidelines: 750); 0 = no cap")
     p.add_argument("-o", "--output", default="output/plan.json")
     args = ap.parse_args()
     {"apps": cmd_apps, "plan": cmd_plan}[args.cmd](args)

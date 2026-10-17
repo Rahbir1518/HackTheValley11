@@ -57,7 +57,10 @@ object names and custom properties (exported as glTF `extras`).
 
 ```json
 {"version": 1, "metadata": {"application_id": "..."}, "steps": [
+  {"tool": "create_ground",          "args": {"size_m": 600}},
+  {"tool": "load_context_parcels",   "args": {"geojson": {"type": "FeatureCollection", "features": []}}},
   {"tool": "load_context_buildings", "args": {"geojson": {"type": "FeatureCollection", "features": []}}},
+  {"tool": "load_street_trees",      "args": {"trees": [{"x": 12.5, "y": -40.2, "dbh_cm": 35}]}},
   {"tool": "create_lot",    "args": {"polygon": [[x, y], ...]}},
   {"tool": "create_podium", "args": {"footprint": [[x, y], ...], "storeys": 4, "storey_height": 4.5}},
   {"tool": "add_tower",     "args": {"name": "Tower_A", "base": "Podium", "storeys": 30, "storey_height": 3.1,
@@ -79,6 +82,10 @@ The same plan always produces a byte-identical `.glb`.
 | [Property Boundaries](https://open.toronto.ca/dataset/property-boundaries/) | lot polygon | No address field: lots are found by spatial join with address points. |
 | [3D Massing](https://open.toronto.ca/dataset/3d-massing/) (2025) | surrounding buildings + heights | Despite the "WGS84" file name, the shapefile is Web Mercator (EPSG:3857). Flat footprints with `AVG_HEIGHT`; `MAX_HEIGHT` is 0 for non-LiDAR rows. |
 | [Address Points](https://open.toronto.ca/dataset/address-points-municipal-toronto-one-address-repository/) | geocoding | Used instead of Nominatim. |
+| [Street Tree Data](https://open.toronto.ca/dataset/street-tree-data/) | street trees in the scene | Only trunk diameter is published; tree height/crown size are estimated from it. |
+
+Streets in the 3D scene are the gaps between non-road property parcels (`CORRIDOR` parcels are road allowances).
+Facade window grids are illustrative and aligned to storey heights; they are not real window positions.
 
 Source URLs and refresh dates are stored in the `sources` table so the UI can link to them.
 

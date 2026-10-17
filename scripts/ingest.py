@@ -58,6 +58,19 @@ DATASETS = {
         "resource": "3DMassingShapefile_2025_WGS84.zip",  # file download, not datastore
         "dump_fields": None,
     },
+    "trees": {
+        "package": "street-tree-data",
+        "resource": "Street Tree Data",
+        "dump_fields": "COMMON_NAME,DBH_TRUNK,geometry",
+    },
+}
+# Tables each dataset writes (used by --only to replace just those).
+TABLES = {
+    "dev_apps": ["dev_apps", "dev_apps_idx"],
+    "parcels": ["parcels", "parcels_idx"],
+    "address_points": ["address_points"],
+    "massing": ["buildings", "buildings_idx"],
+    "trees": ["street_trees", "street_trees_idx"],
 }
 
 
@@ -95,9 +108,9 @@ def download(url: str, dest: Path) -> None:
     tmp.replace(dest)
 
 
-def fetch_all(refresh: bool) -> dict:
+def fetch_all(refresh: bool, keys) -> dict:
     meta = {}
-    for key in DATASETS:
+    for key in keys:
         info = resolve(key)
         dest = RAW / (f"{key}.zip" if key == "massing" else f"{key}.csv")
         if refresh or not dest.exists():
@@ -222,6 +235,22 @@ def load_address_points(db, path: Path) -> None:
     print(f"  address_points: {n} rows")
 
 
+def load_trees(db, path: Path) -> None:
+    t = Transformer.from_crs(4326, TARGET_CRS, always_xy=True)
+    rows = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if not r["geometry"]:
+                continue
+            g = json.loads(r["geometry"])
+            lon, lat = (g["coordinates"][0] if g["type"] == "MultiPoint" else g["coordinates"])[:2]
+            x, y = t.transform(lon, lat)
+            rows.append((len(rows), r["COMMON_NAME"], to_int(r["DBH_TRUNK"]), x, y))
+    db.executemany("INSERT INTO street_trees VALUES (?,?,?,?,?)", rows)
+    db.executemany("INSERT INTO street_trees_idx VALUES (?,?,?,?,?)", ((r[0], r[3], r[3], r[4], r[4]) for r in rows))
+    print(f"  street_trees: {len(rows)} rows")
+
+
 def rings_to_geom(points, parts) -> shapely.Geometry | None:
     """Shapefile rings -> (Multi)Polygon. Outer rings are clockwise, holes counter-clockwise."""
     bounds = list(parts) + [len(points)]
@@ -278,29 +307,38 @@ def load_massing(db, zip_path: Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--refresh", action="store_true", help="re-download raw files")
+    ap.add_argument("--only", nargs="+", choices=list(DATASETS),
+                    help="reload just these datasets into the existing database")
     args = ap.parse_args()
+    keys = args.only or list(DATASETS)
 
     print("Fetching datasets")
-    meta = fetch_all(args.refresh)
+    meta = fetch_all(args.refresh, keys)
 
-    tmp = DB_PATH.with_suffix(".building")
-    tmp.unlink(missing_ok=True)
-    db = sqlite3.connect(tmp)
+    if args.only and DB_PATH.exists():
+        target = DB_PATH  # update in place
+    else:
+        target = DB_PATH.with_suffix(".building")
+        target.unlink(missing_ok=True)
+    db = sqlite3.connect(target)
     db.executescript((ROOT / "backend" / "data" / "schema.sql").read_text())
 
     print("Building database")
-    load_dev_apps(db, meta["dev_apps"][1])
-    load_address_points(db, meta["address_points"][1])
-    load_parcels(db, meta["parcels"][1])
-    load_massing(db, meta["massing"][1])
-    for key, (info, _) in meta.items():
+    loaders = {"dev_apps": load_dev_apps, "address_points": load_address_points,
+               "parcels": load_parcels, "massing": load_massing, "trees": load_trees}
+    for key in keys:
+        for table in TABLES[key]:
+            db.execute(f"DELETE FROM {table}")
+        loaders[key](db, meta[key][1])
+        info = meta[key][0]
         db.execute(
-            "INSERT INTO sources VALUES (?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO sources VALUES (?,?,?,?,?,?)",
             (key, info["title"], info["page_url"], info["resource_url"], info["last_refreshed"], info["downloaded_at"]),
         )
     db.commit()
     db.close()
-    tmp.replace(DB_PATH)
+    if target != DB_PATH:
+        target.replace(DB_PATH)
     print(f"Done: {DB_PATH}")
 
 

@@ -23,26 +23,40 @@ def render_png(path):
     import bpy
     from mathutils import Vector
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_WORKBENCH"
-    scene.display.shading.light = "STUDIO"
-    scene.display.shading.color_type = "MATERIAL"
-    scene.display.shading.show_shadows = True
-    scene.display.shading.background_type = "VIEWPORT"
-    scene.display.shading.background_color = (0.92, 0.92, 0.92)
+    scene.render.engine = "BLENDER_EEVEE"
+    scene.eevee.taa_render_samples = 32
     scene.render.resolution_x, scene.render.resolution_y = 1600, 1000
+
+    world = bpy.data.worlds.new("PreviewWorld")
+    world.use_nodes = True
+    world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.55, 0.62, 0.72, 1)
+    world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.45
+    scene.world = world
+
+    # Late-afternoon sun from the south-west so towers cast readable shadows.
+    sun = bpy.data.objects.new("PreviewSun", bpy.data.lights.new("PreviewSun", "SUN"))
+    sun.data.energy = 5.0
+    sun.data.angle = math.radians(1.5)
+    sun.rotation_euler = (math.radians(50), 0, math.radians(-135))
+    scene.collection.objects.link(sun)
+
+    for o in scene.objects:  # preview shows the "after" state
+        o.hide_render = o.get("role") == "existing_on_site"
     proposed = [o for o in scene.objects if o.get("role") == "proposed"] or [o for o in scene.objects if o.type == "MESH"]
     top = max((o.get("top_elevation_m", o.get("height_m", 10)) for o in proposed), default=30)
     cam = bpy.data.objects.new("RenderCamera", bpy.data.cameras.new("RenderCamera"))
+    cam.data.lens = 35
     scene.collection.objects.link(cam)
-    dist = max(260.0, top * 3.0)
-    cam.location = Vector((dist * math.cos(math.radians(-60)), dist * math.sin(math.radians(-60)), dist * 0.75))
-    direction = Vector((0, 0, top * 0.35)) - cam.location
+    dist = max(170.0, top * 2.4)
+    cam.location = Vector((dist * math.cos(math.radians(-55)), dist * math.sin(math.radians(-55)), dist * 0.6))
+    direction = Vector((0, 0, top * 0.3)) - cam.location
     cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
     cam.data.clip_end = 5000
     scene.camera = cam
     scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
-    bpy.data.objects.remove(cam)
+    for obj in (cam, sun):
+        bpy.data.objects.remove(obj)
 
 
 def main():

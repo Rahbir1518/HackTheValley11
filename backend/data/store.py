@@ -214,6 +214,36 @@ def context_buildings(db, site: Site, radius_m: float = 250) -> list[dict]:
     return sorted(out, key=lambda b: b["id"])
 
 
+def context_parcels(db, site: Site, radius_m: float = 250) -> list[shapely.Geometry]:
+    """Non-road parcels around the site (excluding the site itself), shrunk 0.4 m so
+    neighbouring lots read as separate pads. Roads (CORRIDOR) are left as bare ground."""
+    ox, oy = site.origin
+    rows = _rtree_rows(db, "parcels", ox - radius_m, oy - radius_m, ox + radius_m, oy + radius_m,
+                       "parcel_id, feature_type, geom")
+    circle = Point(ox, oy).buffer(radius_m)
+    out = []
+    for r in sorted(rows, key=lambda r: r["id"]):
+        if r["feature_type"] == "CORRIDOR" or r["parcel_id"] in site.parcel_ids:
+            continue
+        g = shapely.from_wkb(r["geom"])
+        if not g.intersects(circle):
+            continue
+        g = _polygonal(g.difference(site.lot).buffer(-0.4, join_style="mitre"))
+        if g is not None and not g.is_empty and g.area > 4:
+            out.append(g.simplify(0.2))
+    return out
+
+
+def context_trees(db, site: Site, radius_m: float = 250) -> list[dict]:
+    ox, oy = site.origin
+    rows = db.execute(
+        "SELECT t.id, t.dbh_cm, t.x, t.y FROM street_trees t JOIN street_trees_idx i ON t.id = i.id "
+        "WHERE i.minx >= ? AND i.maxx <= ? AND i.miny >= ? AND i.maxy <= ? ORDER BY t.id",
+        (ox - radius_m, ox + radius_m, oy - radius_m, oy + radius_m)).fetchall()
+    return [{"x": round(r["x"] - ox, 2), "y": round(r["y"] - oy, 2), "dbh_cm": r["dbh_cm"]}
+            for r in rows if (r["x"] - ox) ** 2 + (r["y"] - oy) ** 2 <= radius_m ** 2]
+
+
 # ------------------------------------------------------------------ local frame
 
 def to_local(geom: shapely.Geometry, origin) -> shapely.Geometry:
@@ -231,6 +261,11 @@ def _polygonal(g: shapely.Geometry) -> shapely.Geometry | None:
         return g
     polys = [p for p in getattr(g, "geoms", []) if p.geom_type == "Polygon"]
     return shapely.MultiPolygon(polys) if polys else None
+
+
+def parcels_geojson(parcels: list[shapely.Geometry], origin) -> dict:
+    return {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {}, "geometry": mapping(to_local(g, origin))} for g in parcels]}
 
 
 def context_geojson(buildings: list[dict], origin) -> dict:
