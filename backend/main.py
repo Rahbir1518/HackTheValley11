@@ -186,6 +186,25 @@ def sunlight_study(scene_key: str, date: str):
     return res | {"png_url": f"/files/scenes/{scene_key}/sun_{day.isoformat()}.png"}
 
 
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+    place: dict | None = None  # {"address", "app_number"} of the proposal being discussed
+    include_closed: bool = False
+    history: list[dict] = Field(default_factory=list)
+
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest):
+    """Home chat: proposals near an address in the message, or a (cited) answer."""
+    from . import chat as chat_router
+    from .llm.providers import LLMError
+
+    try:
+        return await chat_router.handle(req.message, req.place, req.include_closed, req.history)
+    except LLMError as e:
+        raise HTTPException(503, f"Ordis can't answer right now: {e}")
+
+
 class AskRequest(BaseModel):
     app_number: str
     question: str = Field(min_length=2, max_length=500)

@@ -77,7 +77,11 @@ async def run(address: str, emit: Emit, app_number: str | None = None, include_c
             for agent, kind, message, data in saved["events"]:
                 await emit(agent, kind, message, data)
                 await asyncio.sleep(REPLAY_DELAY_S)
-            return saved["result"] | {"cached": True}
+            result = saved["result"]
+            for a in [result.get("application") or {}, *result.get("candidates", [])]:
+                if a.get("address"):
+                    a["address"] = a["address"].title()  # runs saved before addresses were title-cased
+            return result | {"cached": True}
 
     events: list = []
 
@@ -105,6 +109,7 @@ def cached_runs() -> list[dict]:
             continue
         r = s["result"]
         out.append({
+            "key": f.stem,
             "address": (r.get("geocode") or {}).get("address_full") or s["query"],
             "app_number": s["app_number"],
             "include_closed": s["include_closed"],

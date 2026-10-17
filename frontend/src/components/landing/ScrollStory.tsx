@@ -2,38 +2,77 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { Check, Search, Sun } from "lucide-react";
+import { StatusChip } from "@/components/brand";
 
 const PHASES = [
-  {
-    n: "01",
-    title: "Find",
-    body: "Enter any Toronto address. Ordis searches more than 26,000 City of Toronto development applications around it and picks the one that matters to your block.",
-  },
-  {
-    n: "02",
-    title: "Read",
-    body: "AI agents read the application text for storeys, height, podium and towers. Anything the text doesn't say is estimated with a rule you can see, never passed off as fact.",
-  },
-  {
-    n: "03",
-    title: "Build",
-    body: "Blender builds a 3D massing model on the real property boundary, among the City's 3D buildings and street trees.",
-  },
-  {
-    n: "04",
-    title: "Shadow",
-    body: "Move the sun through any day of the year and compare your street with and without the proposal.",
-  },
-  {
-    n: "05",
-    title: "Understand",
-    body: "A plain-language summary, the official record and every assumption, side by side. Information, not advocacy.",
-  },
+  { n: "01", title: "Find", lead: "Start with any Toronto address.", body: "Search 26,000+ City development applications to see what's proposed nearby." },
+  { n: "02", title: "Read", lead: "The paperwork, made approachable.", body: "AI agents read the application. Anything not stated is estimated with a visible rule, never passed off as fact." },
+  { n: "03", title: "Build", lead: "A proposal in its real surroundings.", body: "Explore a 3D model on the real property boundary, among the City's 3D buildings and trees." },
+  { n: "04", title: "Shadow", lead: "See the street in a different light.", body: "Move the sun through any day. Compare your street with and without the proposal." },
+  { n: "05", title: "Understand", lead: "The context. Not a conclusion.", body: "A plain-language summary, the official record, and every assumption. Information, not advocacy." },
 ];
 
 const SEGMENTS = PHASES.length + 1; // hero + phases
+const card = "rounded-xl border border-line bg-white shadow-[0_8px_24px_rgba(35,53,44,0.05)]";
 
-/** Full-screen video scrubbed by scroll, with the hero and five phases fading in over it. */
+/** The small product moment that floats beside each phase. */
+function PhaseCard({ n }: { n: string }) {
+  if (n === "01")
+    return (
+      <div className={`${card} w-[450px] space-y-3.5 p-[22px]`}>
+        <p className="mono text-[10px] text-muted">YOUR ADDRESS, YOUR STARTING POINT</p>
+        <div className="flex items-center gap-3.5 text-[18px] text-black">
+          <Search className="size-[18px]" strokeWidth={1.5} />
+          135 Liberty St, Toronto <span className="text-[20px]">↗</span>
+        </div>
+        <p className="text-[11px] text-muted">City records, brought into focus.</p>
+      </div>
+    );
+  if (n === "02")
+    return (
+      <div className={`${card} w-[330px] space-y-3 p-[22px]`}>
+        <p className="mono text-[9px] text-muted">APPLICATION · PLAIN LANGUAGE</p>
+        <p className="text-[18px] text-black">135 Liberty St</p>
+        <StatusChip>Stated in application</StatusChip>
+        <p className="text-[13px] leading-[1.5] text-black">10- and 11-storey office towers. Heritage buildings retained.</p>
+        <StatusChip tone="prop">Estimated · rule shown</StatusChip>
+        <p className="text-[12px] leading-[1.5] text-muted">Approx. 43 m / 47 m, using 4.0 m office floor heights.</p>
+      </div>
+    );
+  if (n === "03")
+    return (
+      <div className={`${card} flex gap-5 px-4 py-2.5 text-[10px] text-muted`}>
+        <span>┄ PROPERTY BOUNDARY</span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-2 bg-context" /> CITY 3D MASSING
+        </span>
+      </div>
+    );
+  if (n === "04")
+    return (
+      <div className={`${card} flex items-center gap-4 rounded-full px-5 py-3 text-[11px]`}>
+        <Sun className="size-4" strokeWidth={1.5} />
+        <span className="mono text-prop-ink">21 JUN · 16:00</span>
+        <span className="h-4 w-px bg-line" />
+        <span className="text-muted">Without</span>
+        <span className="rounded bg-select px-2 py-0.5 text-prop-ink">With proposal</span>
+      </div>
+    );
+  return (
+    <div className={`${card} w-[260px] space-y-3 p-5`}>
+      <p className="text-[15px] text-black">A clearer picture.</p>
+      {["What is proposed", "What is estimated", "The official record"].map((x, i) => (
+        <div key={x} className="flex items-center justify-between border-b border-line pb-2 text-[12px] text-muted last:border-0">
+          {x}
+          {i < 2 ? <Check className="size-3.5 text-prop-ink" /> : <span>↗</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Full-screen line-drawing video scrubbed by scroll, with the hero and five phases over it. */
 export default function ScrollStory() {
   const section = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
@@ -44,18 +83,14 @@ export default function ScrollStory() {
     const v = video.current;
     let raf = 0;
     let current = 0;
-
     const onScroll = () => {
       const el = section.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const total = rect.height - window.innerHeight;
-      const p = Math.min(1, Math.max(0, -rect.top / total));
+      const p = Math.min(1, Math.max(0, -rect.top / (rect.height - window.innerHeight)));
       target.current = p;
       setProgress(p);
     };
-
-    // Ease the video towards the scroll position so scrubbing feels smooth.
     const tick = () => {
       if (v && v.duration) {
         current += (target.current - current) * 0.12;
@@ -64,7 +99,6 @@ export default function ScrollStory() {
       }
       raf = requestAnimationFrame(tick);
     };
-
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
@@ -76,48 +110,40 @@ export default function ScrollStory() {
     };
   }, []);
 
-  // Opacity of segment i: fades in and out around its slice of the scroll.
   const visible = (i: number) => {
     const centre = (i + 0.5) / SEGMENTS;
-    // The hero is fully shown at the top and the last phase stays until the section ends.
     if ((i === 0 && progress <= centre) || (i === SEGMENTS - 1 && progress >= centre)) return 1;
     const d = Math.abs(progress - centre) * SEGMENTS;
     return Math.max(0, Math.min(1, 1.6 - d * 2.2));
   };
-  const active = Math.min(PHASES.length - 1, Math.max(0, Math.floor(progress * SEGMENTS) - 1));
+  const active = Math.floor(progress * SEGMENTS) - 1; // -1 = hero
 
   return (
     <section ref={section} style={{ height: `${SEGMENTS * 110}vh` }} className="relative">
       <div className="sticky top-0 h-screen overflow-hidden bg-white">
-        <video
-          ref={video}
-          src="/media/backgroundVid.mp4"
-          muted
-          playsInline
-          preload="auto"
-          className="absolute inset-0 h-full w-full object-cover opacity-90"
-        />
-        {/* Legibility wash on the text side */}
-        <div className="absolute inset-0 bg-linear-to-r from-white via-white/70 to-transparent" />
+        <video ref={video} src="/media/backgroundVid.mp4" muted playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover object-right" />
+        <div className="absolute inset-y-0 left-0 w-[58%] bg-linear-to-r from-white from-55% to-transparent" />
 
         {/* Hero */}
         <div
-          className="absolute inset-0 flex flex-col justify-center px-6 md:px-16"
-          style={{ opacity: visible(0), transform: `translateY(${(1 - visible(0)) * -24}px)` }}
+          className="absolute inset-0 flex flex-col justify-center px-6 pt-16 md:px-20"
+          style={{ opacity: visible(0), transform: `translateY(${(1 - visible(0)) * -24}px)`, pointerEvents: visible(0) > 0.5 ? "auto" : "none" }}
         >
-          <div className="mb-8 flex max-w-md items-start gap-3 border-l-2 border-permit pl-3 text-sm text-steel">
-            <span className="font-semibold text-asphalt">What is Ordis?</span>
-            <span>A civic tool that turns Toronto development applications into 3D models you can explore.</span>
+          <div className="mb-[34px] flex max-w-[395px] gap-4">
+            <div className="h-[57px] w-[2px] shrink-0 bg-rust" />
+            <p className="text-[13px] leading-[1.5] text-muted">What is Ordis? A civic tool that turns Toronto development applications into 3D models you can explore.</p>
           </div>
-          <h1 className="max-w-4xl text-6xl font-semibold leading-[0.95] tracking-tight text-asphalt md:text-8xl">
-            Your block is changing.
+          <h1 className="text-[64px] font-semibold leading-[0.99] tracking-[-0.01em] text-ink md:text-[104px]">
+            Your block
+            <br />
+            is changing.
           </h1>
-          <p className="mt-6 max-w-xl text-xl text-steel md:text-2xl">See what&apos;s proposed near you, before it&apos;s built.</p>
-          <div className="mt-10 flex items-center gap-4">
-            <Link href="/viewer" className="rounded-full bg-asphalt px-6 py-3 text-sm font-semibold text-white hover:bg-permit hover:text-asphalt">
-              Enter Ordis
+          <p className="mt-[34px] max-w-[470px] text-[21px] leading-[1.5] text-muted">See what&apos;s proposed near you, before it&apos;s built.</p>
+          <div className="mt-[34px] flex items-center gap-7">
+            <Link href="/ask" className="flex h-12 items-center rounded-full bg-ink px-6 text-[14px] text-white hover:bg-black">
+              Enter Ordis →
             </Link>
-            <span className="animate-bounce text-sm text-steel">Scroll to explore ↓</span>
+            <span className="mono text-[11px] text-muted">Scroll to explore ↓</span>
           </div>
         </div>
 
@@ -125,31 +151,32 @@ export default function ScrollStory() {
         {PHASES.map((ph, i) => {
           const o = visible(i + 1);
           return (
-            <div
-              key={ph.n}
-              className="absolute inset-0 flex flex-col justify-center px-6 md:px-16"
-              style={{ opacity: o, transform: `translateY(${(1 - o) * 30}px)`, pointerEvents: o > 0.5 ? "auto" : "none" }}
-            >
-              <span className="font-mono text-sm tracking-[0.3em] text-permit">PHASE {ph.n}</span>
-              <h2 className="mt-2 text-7xl font-semibold tracking-tight text-asphalt md:text-9xl">{ph.title}.</h2>
-              <p className="mt-6 max-w-lg text-lg leading-relaxed text-[#3d3d3b] md:text-xl">{ph.body}</p>
+            <div key={ph.n} className="absolute inset-0" style={{ opacity: o, pointerEvents: o > 0.5 ? "auto" : "none" }}>
+              <div className="absolute left-6 top-[22vh] w-[480px] space-y-6 md:left-20" style={{ transform: `translateY(${(1 - o) * 30}px)` }}>
+                <p className="mono text-[12px] text-rust">PHASE {ph.n}</p>
+                <p className="text-[80px] font-semibold leading-[1.05] tracking-[-0.01em] text-ink md:text-[112px]">{ph.title}.</p>
+                <div className="w-[410px] space-y-2.5 text-muted">
+                  <p className="text-[21px] leading-[1.45]">{ph.lead}</p>
+                  <p className="text-[16px] leading-[1.6]">{ph.body}</p>
+                </div>
+              </div>
+              <div className="absolute bottom-[16vh] right-[12%] hidden lg:block" style={{ transform: `translateY(${(1 - o) * 20}px)` }}>
+                <PhaseCard n={ph.n} />
+              </div>
             </div>
           );
         })}
 
-        {/* Phase rail */}
-        <div className="absolute bottom-8 left-6 right-6 flex items-center gap-3 md:left-16 md:right-16">
+        <p className="mono absolute bottom-[68px] right-12 text-[9px] text-muted">SCHEMATIC MASSING STUDY / ORDIS</p>
+
+        {/* Story progress */}
+        <div className="absolute inset-x-0 bottom-0 flex gap-2 px-12 pb-[22px]">
           {PHASES.map((ph, i) => (
-            <div key={ph.n} className="flex-1">
-              <div className="h-px bg-concrete">
-                <div
-                  className="h-px bg-asphalt transition-[width] duration-150"
-                  style={{ width: `${Math.max(0, Math.min(1, progress * SEGMENTS - (i + 1))) * 100}%` }}
-                />
+            <div key={ph.n} className="flex-1 space-y-2.5">
+              <div className="h-px bg-line">
+                <div className="h-px bg-ink" style={{ width: `${Math.max(0, Math.min(1, progress * SEGMENTS - (i + 1) + 1)) * 100}%` }} />
               </div>
-              <span className={`mt-2 block font-mono text-[11px] ${i === active && progress > 1 / SEGMENTS ? "text-asphalt" : "text-steel"}`}>
-                {ph.n} {ph.title}
-              </span>
+              <p className={`mono whitespace-pre text-[10px] ${i === active ? "text-ink" : "text-muted"}`}>{`${ph.n}  ${ph.title}`}</p>
             </div>
           ))}
         </div>

@@ -21,22 +21,23 @@ class ToolError(ValueError):
 
 # Facade textures: one tile = one window bay x one storey. Colours are sRGB.
 FACADES = {
+    # Light architectural palette from the Ordis design: soft grey-green city, blue-grey proposal.
     #                   frame                glass                slab band
-    "existing":         ((0.86, 0.86, 0.84), (0.50, 0.54, 0.58), (0.76, 0.76, 0.74)),
-    "existing_on_site": ((0.60, 0.60, 0.60), (0.36, 0.38, 0.41), (0.52, 0.52, 0.52)),
-    "proposed":         ((0.96, 0.52, 0.18), (0.14, 0.19, 0.25), (0.99, 0.66, 0.36)),
+    "existing":         ((0.93, 0.94, 0.92), (0.80, 0.83, 0.81), (0.87, 0.89, 0.87)),
+    "existing_on_site": ((0.84, 0.86, 0.85), (0.70, 0.73, 0.72), (0.78, 0.80, 0.79)),
+    "proposed":         ((0.80, 0.85, 0.90), (0.56, 0.65, 0.72), (0.70, 0.77, 0.83)),
 }
 # Flat materials (linear RGB for the Principled BSDF).
 FLAT = {
-    "roof_existing": (0.42, 0.42, 0.41, 1.0),
-    "roof_existing_on_site": (0.25, 0.25, 0.25, 1.0),
-    "roof_proposed": (0.62, 0.20, 0.04, 1.0),
-    "lot": (0.03, 0.03, 0.03, 1.0),
-    "ground": (0.045, 0.045, 0.05, 1.0),       # asphalt: streets show between parcels
-    "parcel": (0.52, 0.52, 0.50, 1.0),         # sidewalks / yards
-    "tree_trunk": (0.12, 0.07, 0.04, 1.0),
-    "tree_crown": (0.07, 0.20, 0.05, 1.0),
-    "floor_lines": (0.02, 0.02, 0.02, 1.0),
+    "roof_existing": (0.92, 0.93, 0.91, 1.0),
+    "roof_existing_on_site": (0.70, 0.72, 0.71, 1.0),
+    "roof_proposed": (0.66, 0.75, 0.84, 1.0),
+    "lot": (0.70, 0.77, 0.83, 1.0),             # property boundary: pale blue pad
+    "ground": (0.80, 0.84, 0.83, 1.0),          # streets: canvas grey-green (#EDF0EF)
+    "parcel": (0.90, 0.91, 0.89, 1.0),          # lots / sidewalks a touch lighter
+    "tree_trunk": (0.32, 0.30, 0.27, 1.0),
+    "tree_crown": (0.35, 0.44, 0.33, 1.0),      # sage
+    "floor_lines": (0.25, 0.33, 0.40, 1.0),
 }
 ROLES = set(FACADES) | {"lot", "floor_lines"}
 TILE = 64  # facade texture resolution (px per bay/storey)

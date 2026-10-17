@@ -93,7 +93,8 @@ def _app_dict(row, origin=None) -> dict:
     d["type_name"] = APP_TYPE_NAMES.get(d["app_type"], d["app_type"])
     d["modelled"] = d["app_type"] in MODELLED_TYPES
     d["closed"] = bool(CLOSED_STATUS_RE.search(d["status"] or ""))
-    d["address"] = " ".join(filter(None, [d["street_num"], d["street_name"], d["street_type"], d["street_direction"]]))
+    # City records are upper case ("135 LIBERTY ST"); present them like address points ("135 Liberty St").
+    d["address"] = " ".join(filter(None, [d["street_num"], d["street_name"], d["street_type"], d["street_direction"]])).title()
     if origin and d["x"] is not None:
         d["distance_m"] = round(((d["x"] - origin[0]) ** 2 + (d["y"] - origin[1]) ** 2) ** 0.5, 1)
     return d

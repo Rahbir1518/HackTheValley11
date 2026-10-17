@@ -1,44 +1,58 @@
 @import "tailwindcss";
 
-/* Ordis palette: paper white, concrete greys, asphalt black, permit orange. */
+/* Ordis design tokens (from the Figma file). */
 @theme inline {
-  --color-paper: #f7f7f5;
-  --color-concrete: #d9d9d6;
-  --color-steel: #8a8a87;
-  --color-asphalt: #111111;
-  --color-permit: #f26b1d;
-  --color-permit-soft: #ffb07a;
+  --color-ink: #202322;
+  --color-muted: #727773;
+  --color-line: #dddfdb;
+  --color-soft: #f2f2ef;
+  --color-side: #fafaf8;
+  --color-canvas: #edf0ef;
+  --color-rust: #ad542d;
+  --color-prop: #8fa5b7;
+  --color-prop-ink: #566f87;
+  --color-select: #e6edf3;
+  --color-context: #c4cdca;
+  --color-street: #89958e;
+  /* sunlight-lost heat */
+  --color-heat: #d7140f;
 
-  /* Unity-style editor chrome */
-  --color-ed-bg: #191919;
-  --color-ed-panel: #282828;
-  --color-ed-header: #3c3c3c;
-  --color-ed-border: #111111;
-  --color-ed-hover: #3a3a3a;
-  --color-ed-select: #2c5d87;
-  --color-ed-text: #d2d2d2;
-  --color-ed-dim: #8c8c8c;
-
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
 }
 
 html,
 body {
-  background: var(--color-paper);
-  color: var(--color-asphalt);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: #ffffff;
+  color: #000000;
+  font-family: var(--font-inter), Arial, Helvetica, sans-serif;
 }
 
-/* Thin dark scrollbars inside the editor */
-.editor ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.mono {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  letter-spacing: 0.02em;
 }
-.editor ::-webkit-scrollbar-thumb {
-  background: #4a4a4a;
-  border-radius: 4px;
+
+/* Thin scrollbars inside app panels */
+.thin-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-.editor ::-webkit-scrollbar-track {
-  background: transparent;
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #dddfdb;
+  border-radius: 3px;
+}
+
+/* Ordi idle motion */
+@keyframes ordi-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes ordi-blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+@keyframes ordi-think {
+  0%, 100% { transform: translate(-2px, -2px); }
+  50% { transform: translate(2px, -2px); }
 }

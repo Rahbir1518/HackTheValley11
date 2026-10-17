@@ -89,6 +89,18 @@ npm install
 npm run dev                     # http://localhost:3000
 ```
 
+**Pages** (design: the Ordis Figma file; Inter + IBM Plex Mono, white/grey with blue-grey proposal accents):
+
+| Route | What it is |
+|---|---|
+| `/` | Public landing: scroll-scrubbed video story, open data, principles, footer with Ordi |
+| `/sign-in` | Clerk sign-in (redirects to `/ask`) |
+| `/ask` | **Ask Ordis** home: type a Toronto address in plain language ("proposals near 135 Liberty St") to get nearby proposals with "View in 3D"; other questions get cited or clearly-labelled general answers (`POST /api/chat`) |
+| `/viewer?address=…&app=…` | 3D viewer: Explore (existing / with proposal, scene collection, overview, evidence, nearby & ward, site imagery, get involved) and Sunlight study (synchronised split comparison, hour timeline, hours-of-sun-lost heatmap) |
+
+After changing Blender materials, `backend/.venv/Scripts/python -m backend.rebuild_scenes` re-renders saved scenes
+without any AI calls.
+
 The landing page (`/`) is public: a full-screen line-drawing video scrubbed by scroll (re-encoded with a
 keyframe on every frame so seeking is smooth) walks through the five phases, followed by the open data used,
 the design principles and a call to action. `/viewer` requires Clerk sign-in (`/sign-in`). For local testing without Clerk, put
