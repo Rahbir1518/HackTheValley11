@@ -53,6 +53,27 @@ backend/.venv/Scripts/python -m pytest backend/tests -q
 Open the `.glb` in Blender (File → Import → glTF) or https://gltf-viewer.donmccurdy.com/ to inspect
 object names and custom properties (exported as glTF `extras`).
 
+## Agent pipeline
+
+Set `LLM_PROVIDER` and the matching key in `.env` (free keys: [Gemini](https://aistudio.google.com/apikey),
+[Groq](https://console.groq.com/keys), [OpenRouter](https://openrouter.ai/keys)), then:
+
+```bash
+backend/.venv/Scripts/python -m backend.run "135 Liberty St"
+```
+
+| Agent | Does | Uses the LLM for |
+|---|---|---|
+| Data | geocode, nearby applications, related applications, lot, neighbours | choosing among several applications |
+| Interpreter | reads application text into an `Extraction`, then `complete_spec` fills gaps with fixed rules, each recorded as an assumption | extracting stated numbers only (`backend/agents/spec.py`) |
+| Builder | turns the spec into tool calls; `validate_steps` simulates them with the Blender geometry code and sends errors back for a retry (3 tries, then a labelled rule-based plan) | choosing tool calls |
+| Narrator | plain-language summary (template fallback if the LLM fails) | writing |
+
+Every LLM call asks for JSON, is validated with Pydantic and retried with the error message; HTTP 429/5xx
+are retried with exponential backoff. Results are cached in `output/cache/` (interpretation by application
+text hash, scenes by application + spec hash), so repeat runs are instant. Applications that don't describe
+a building, don't state a height/storeys, or have confidence < 0.4 are reported, not modelled.
+
 ### Build plan format
 
 ```json
