@@ -232,7 +232,7 @@ def proposal(app_number: str):
     spec = _cached_spec(db, app_)
     facts = site_facts.for_application(db, app_)
     return {
-        "application": {k: app_[k] for k in ("app_number", "address", "type_name", "status", "date_submitted",
+        "application": {k: app_[k] for k in ("app_number", "address", "type_name", "status", "date_submitted", "modelled",
                                              "application_url", "description", "ward_name")},
         "narration": (saved or {}).get("narration"),
         "preview_url": (saved or {}).get("preview_url"),

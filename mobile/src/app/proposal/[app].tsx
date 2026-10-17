@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Chip, Label, Notice, Row } from "@/components/ui";
-import { apiImage, plannerName, storeysText, useApi, WEB_URL, type Place, type Proposal } from "@/lib/api";
+import { apiImage, buildModel, plannerName, storeysText, useApi, WEB_URL, type Place, type Proposal } from "@/lib/api";
 import { color } from "@/lib/theme";
 
 /** Light markdown from the Narrator: drop the markers, keep the words. */
@@ -18,6 +18,9 @@ export default function ProposalScreen() {
   const [p, setP] = useState<Proposal | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [place, setPlace] = useState<Place | null>(null);
+  const [reload, setReload] = useState(0); // bumped after the 3D model is built
+  const [building, setBuilding] = useState(false);
+  const [buildNote, setBuildNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,7 +40,18 @@ export default function ProposalScreen() {
     return () => {
       cancelled = true;
     };
-  }, [api, app, address]);
+  }, [api, app, address, reload]);
+
+  const build = useCallback(async () => {
+    if (!p) return;
+    setBuilding(true);
+    setBuildNote(null);
+    const where = address && !address.startsWith("Your location") ? address : p.application.address;
+    const res = await buildModel(where, p.application.app_number);
+    setBuilding(false);
+    if (res.ok) setReload((n) => n + 1);
+    else setBuildNote(res.message ?? "Ordis couldn't build a model for this application.");
+  }, [p, address]);
 
   const toggleWatch = useCallback(async () => {
     if (!place) return;
@@ -85,7 +99,21 @@ export default function ProposalScreen() {
             <Text style={s.caption}>3D massing approximation from the application, among the City&apos;s buildings.</Text>
           </View>
         ) : (
-          <Notice>Ordis hasn&apos;t modelled this application yet. Open it on the website to build the 3D model.</Notice>
+          <View style={{ gap: 10 }}>
+            {a.modelled ? (
+              <>
+                <Notice>
+                  {building
+                    ? "Ordis is reading the application and building the 3D model. This takes about a minute the first time…"
+                    : "Ordis hasn't modelled this application yet. It reads the application text, builds the 3D model and writes a plain-language summary."}
+                </Notice>
+                <Button title={building ? "Building…" : "Build the 3D model"} onPress={build} busy={building} />
+              </>
+            ) : (
+              <Notice>{`This is a ${a.type_name.toLowerCase()} application, not a new building, so there is no 3D model.`}</Notice>
+            )}
+            {buildNote && <Notice>{buildNote}</Notice>}
+          </View>
         )}
 
         <View style={{ gap: 8 }}>

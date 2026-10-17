@@ -2,12 +2,12 @@ import { useAuth } from "@clerk/expo";
 import { Image } from "expo-image";
 import * as Location from "expo-location";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Chip, Label, Notice, Wordmark } from "@/components/ui";
 import { apiImage, useApi, type Nearby, type NearbyApplication, type Place } from "@/lib/api";
-import { color } from "@/lib/theme";
+import { color, mono } from "@/lib/theme";
 
 const DEMO_PLACES = ["135 Liberty St", "100 Queen St W", "240 Wellesley St E", "5250 Yonge St"];
 
@@ -49,58 +49,62 @@ function NearMe() {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
 
-  const loadAt = useCallback(
-    async (lat: number, lon: number, label: string) => {
+  // Only the latest request may update the screen (GPS, a search or a demo place can overlap).
+  const latest = useRef(0);
+
+  /** One lookup: `where` resolves to a position, then the nearby applications are loaded. */
+  const run = useCallback(
+    async (where: () => Promise<{ lat: number; lon: number; label: string }>) => {
+      const id = ++latest.current;
       setBusy(true);
       setError(null);
       try {
-        setResult(await api<Nearby>(`/api/nearby?lat=${lat}&lon=${lon}&radius_m=400`));
+        const { lat, lon, label } = await where();
+        const data = await api<Nearby>(`/api/nearby?lat=${lat}&lon=${lon}&radius_m=400`);
+        if (id !== latest.current) return;
+        setResult(data);
         setSource(label);
       } catch (e) {
+        if (id !== latest.current) return;
         setResult(null);
         setError(e instanceof Error ? e.message : String(e));
       } finally {
-        setBusy(false);
+        if (id === latest.current) setBusy(false);
       }
     },
     [api],
   );
 
-  const locate = useCallback(async () => {
-    const perm = await Location.requestForegroundPermissionsAsync();
-    if (!perm.granted) {
-      setError("Location permission is off. Search an address instead.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      await loadAt(pos.coords.latitude, pos.coords.longitude, "Your location");
-    } catch {
-      setBusy(false);
-      setError("Couldn't get your location. Search an address instead.");
-    }
-  }, [loadAt]);
+  const locate = useCallback(
+    () =>
+      run(async () => {
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (!perm.granted) throw new Error("Location permission is off. Search an address or tap a place above.");
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => {
+          throw new Error("Couldn't get your location. Search an address or tap a place above.");
+        });
+        return { lat: pos.coords.latitude, lon: pos.coords.longitude, label: "Your location" };
+      }),
+    [run],
+  );
 
   const search = useCallback(
-    async (address: string) => {
-      setBusy(true);
-      setError(null);
-      try {
+    (address: string) =>
+      run(async () => {
         const g = await api<{ geocode: { address_full: string; lat: number; lon: number } }>(
           `/api/applications?address=${encodeURIComponent(address)}&radius_m=50`,
         );
-        await loadAt(g.geocode.lat, g.geocode.lon, g.geocode.address_full);
-      } catch (e) {
-        setBusy(false);
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [api, loadAt],
+        return { lat: g.geocode.lat, lon: g.geocode.lon, label: g.geocode.address_full };
+      }),
+    [api, run],
   );
 
+  // Ask for the location once, when the tab opens.
+  const asked = useRef(false);
   useEffect(() => {
-    locate(); // eslint-disable-line react-hooks/set-state-in-effect -- asks for location once on open; state is set after awaits
+    if (asked.current) return;
+    asked.current = true;
+    locate();
   }, [locate]);
 
   return (
@@ -160,7 +164,7 @@ function ApplicationCard({ item, address }: { item: NearbyApplication; address: 
         <Image source={apiImage(item.preview_url)} style={s.thumb} contentFit="cover" transition={150} />
       ) : (
         <View style={[s.thumb, { alignItems: "center", justifyContent: "center", backgroundColor: color.soft }]}>
-          <Text style={{ color: color.muted, fontSize: 10, textAlign: "center" }}>{item.modelled ? "3D on\nfirst open" : "No 3D"}</Text>
+          <Text style={{ color: color.muted, fontSize: 10, textAlign: "center" }}>{item.modelled ? "No 3D\nyet" : "Not a\nbuilding"}</Text>
         </View>
       )}
       <View style={{ flex: 1, gap: 5 }}>
@@ -174,6 +178,7 @@ function ApplicationCard({ item, address }: { item: NearbyApplication; address: 
         <Text style={{ fontSize: 12, color: color.muted, lineHeight: 17 }} numberOfLines={2}>
           {item.headline ?? item.type_name}
         </Text>
+        <Text style={{ fontSize: 10, color: color.muted, fontFamily: mono }}>{item.app_number}</Text>
       </View>
     </Pressable>
   );

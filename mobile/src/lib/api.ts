@@ -1,5 +1,5 @@
 import { useAuth } from "@clerk/expo";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 export const WEB_URL = process.env.EXPO_PUBLIC_WEB_URL ?? "http://localhost:3000";
@@ -46,6 +46,8 @@ export interface Proposal {
     application_url: string | null;
     description: string | null;
     ward_name: string | null;
+    /** A rezoning / site plan application: a type Ordis can turn into a 3D model. */
+    modelled: boolean;
   };
   narration: { headline: string; summary: string; key_facts: string[] } | null;
   preview_url: string | null;
@@ -75,12 +77,18 @@ export interface Proposal {
 
 export class ApiError extends Error {}
 
-/** fetch() against the Ordis API with the Clerk session token, so saved places are per user. */
+/** fetch() against the Ordis API with the Clerk session token, so saved places are per user.
+ *  The returned function keeps one identity for the component's life: Clerk's getToken changes
+ *  identity between renders, and effects depending on it would otherwise re-run in a loop. */
 export function useApi() {
   const { getToken } = useAuth();
+  const tokenRef = useRef(getToken);
+  useEffect(() => {
+    tokenRef.current = getToken;
+  });
   return useCallback(
     async <T,>(path: string, init?: RequestInit): Promise<T> => {
-      const token = await getToken();
+      const token = await tokenRef.current();
       let r: Response;
       try {
         r = await fetch(`${API_URL}${path}`, {
@@ -94,8 +102,28 @@ export function useApi() {
       if (!r.ok) throw new ApiError(data.detail ?? `HTTP ${r.status}`);
       return data as T;
     },
-    [getToken],
+    [],
   );
+}
+
+/** Runs the Ordis agents for one application (the website's /api/run stream) and waits for the
+ *  result: about a minute for a new one, seconds when it's saved. */
+export async function buildModel(address: string, appNumber: string): Promise<{ ok: boolean; message?: string }> {
+  const q = `address=${encodeURIComponent(address)}&app_number=${encodeURIComponent(appNumber)}&include_closed=false`;
+  let text: string;
+  try {
+    const r = await fetch(`${API_URL}/api/run?${q}`, { headers: TUNNEL_HEADERS });
+    text = await r.text(); // the stream ends after its "result" event
+  } catch {
+    return { ok: false, message: `Can't reach the Ordis API at ${API_URL}.` };
+  }
+  const block = text.split("\n\n").reverse().find((b) => b.startsWith("event: result"));
+  const data = block?.split("\n").find((l) => l.startsWith("data: "))?.slice(6);
+  try {
+    return data ? JSON.parse(data) : { ok: false, message: "The model run ended without a result." };
+  } catch {
+    return { ok: false, message: "The model run returned something unexpected." };
+  }
 }
 
 /** "LAST, FIRST" (City data) -> "First Last". */
