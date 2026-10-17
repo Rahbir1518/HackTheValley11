@@ -38,7 +38,7 @@ function cap(s: string) {
   return s ? s[0].toUpperCase() + s.slice(1).replace("-", " ") : s;
 }
 
-function estimatedLines(spec: Spec): string[] {
+function estimatedLines(spec: Spec, infill?: NonNullable<RunResult["site"]>["infill"]): string[] {
   const out: string[] = [];
   if (!spec.height_stated) {
     if (spec.towers.length) out.push(`Towers ${spec.towers.map((t) => `≈${t.height_m.toFixed(0)} m`).join(" / ")} · ${spec.storey_height_m} m floors`);
@@ -47,7 +47,11 @@ function estimatedLines(spec: Spec): string[] {
   if (spec.assumptions.some((a) => a.field === "podium_storeys")) out.push(`Podium ${spec.podium_storeys} storeys · 4.5 m floors`);
   if (spec.assumptions.some((a) => a.field === "tower_setback_m")) out.push(`Setback ${spec.tower_setback_m} m · model assumption`);
   if (spec.assumptions.some((a) => a.field === "total_storeys")) out.push(`Storeys estimated from the stated height`);
-  out.push("Footprint from the property boundary");
+  if (infill?.fits) {
+    out.push(`Footprint: the free part of the lot (${infill.free_m2?.toLocaleString()} m²), ${infill.separation_m} m clear of the existing buildings the application keeps`);
+  } else {
+    out.push("Footprint from the property boundary");
+  }
   return out;
 }
 
@@ -267,7 +271,7 @@ export function ProposalPanel({
           </div>
           <div className="space-y-2 rounded-md bg-select p-3 text-prop-ink">
             <p className={`${mono} text-[9px]`}>ESTIMATED · VISIBLE RULES</p>
-            {estimatedLines(spec).map((l) => (
+            {estimatedLines(spec, result.site?.infill).map((l) => (
               <p key={l} className="text-[11px] leading-[1.5]">
                 {l}
               </p>
@@ -691,7 +695,8 @@ export function BlockPanel({
                       <Row label="Application" value={<span className={`${mono} text-[10px]`}>{p.app_number}</span>} />
                       <p className="text-[10px] leading-[1.5] text-muted">
                         {p.massing === "builder" ? "Massing planned by the Builder Agent when Ordis modelled it." : "Rule-based massing from the stated numbers (not yet modelled on its own)."}
-                        {p.replaces.length ? ` Replaces ${p.replaces.length} building${p.replaces.length > 1 ? "s" : ""} on the lot today.` : ""}
+                        {p.keeps ? " The application keeps the existing buildings on the lot; the new massing is placed beside them." : ""}
+                        {p.replaces.length && !p.keeps ? ` Replaces ${p.replaces.length} building${p.replaces.length > 1 ? "s" : ""} on the lot today.` : ""}
                       </p>
                       {(p.rental_units > 0 || p.heritage.length > 0) && (
                         <p className="text-[10px] leading-[1.5] text-black">

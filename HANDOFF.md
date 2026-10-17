@@ -36,6 +36,8 @@ backend/ (FastAPI)
   site_facts.py          what stands on a lot today: heritage + registered rental homes + the application's
                          own words about rental/demolition, and the replacement rule
   capacity.py            "Can the neighbourhood absorb it?": parks per resident, transit, schools in a walk
+  infill.py              applications that keep the buildings on their lot: retention wording -> keep them,
+                         build on the free part of the lot
   blender_bridge/        headless Blender subprocess, streams build steps
   main.py                API (see below)
 blender/
@@ -78,7 +80,7 @@ cd frontend; npm run dev                                               # http://
 - Reload some datasets in place: `backend\.venv\Scripts\python scripts\ingest.py --only heritage rentals`
   (keys: dev_apps parcels address_points massing trees neighbourhoods profiles heritage rentals green_spaces
   schools transit; add `--refresh` to re-download). New columns on old databases are added by `MIGRATIONS`.
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (58 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (61 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
@@ -172,6 +174,14 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   within 1.5 km, bus/streetcar routes within 500 m (overnight 3xx left out); schools within 1 km (capacity
   is not open data, said so). Block panel: one line for all proposals (135 Liberty: 6.4 -> 5.4 m2 per
   resident with about 1,318 new residents), expandable. Also in the briefing PDF.
+- **Infill sites keep their buildings**: when the application text (or a related one) says existing buildings stay
+  ("will be retained", "will remain", "infill", "to the west of the existing building", "redevelop certain
+  portions"; heritage-facade sentences don't count), buildings on the lot 12 m+ tall stay standing in every view
+  and the new massing is placed on the largest hole-free part of the lot 3 m clear of them (registered as a
+  hidden `Buildable` lot; towers based on "Lot" are rewritten to it). Lower buildings count as replaced. The
+  quote and rule go into the site notes, the "Estimated" box and the PDF; the block view does the same for other
+  proposals; the sunlight study treats kept buildings as existing. Only scenes that change get a new key;
+  runs saved before `infill.VERSION` re-run once from caches (no AI calls). 240 Wellesley St E is the example.
 - Clear progress card: steps tick off; on a refusal it says where it stopped, marks skipped steps and offers
   other nearby proposals that can be shown in 3D.
 
@@ -221,10 +231,9 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 ## Known limitations
 
 - Footprints come from property lines (no setbacks from the street); heights/storeys from text; massing only.
-- **Infill on sites with existing towers is misdrawn**: "With proposal" hides every building on the lot and the
-  podium fills the lot, even when the application keeps them (e.g. 240 Wellesley St E keeps 2,197 rental homes).
-  The "On this site today" card quotes the text correctly, but the 3D model doesn't yet. Fix idea: keep on-site
-  buildings the application says are retained and place new masses on the free part of the lot.
+- Infill detection is a wording rule (`infill.RETAIN_RE`), not the LLM: it can miss unusual phrasing (then the
+  massing covers the whole lot, as before) and it keeps *all* on-lot buildings 12 m+ tall even if the text
+  keeps only some. Tower placement inside an irregular free area is approximate.
 - Shadows/sun loss: clear sky, ground level, flat terrain.
 - Context buildings are the City's 2025 massing (may predate recent construction).
 - Free LLM tiers are small; pre-warm demo addresses.
@@ -242,7 +251,7 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 9. Plain-language summaries/briefing in Toronto's main languages (numbers and stated/estimated labels kept).
 10. Committee of Adjustment applications (separate open dataset: garden suites, additions, minor variances).
 11. Watch an address: notify on status changes or new meetings (daily ingest diff).
-12. Retained buildings on infill sites (see Known limitations).
+12. ~~Retained buildings on infill sites~~ (built; see Known limitations for its rule-based edges).
 
 Optional tweak discussed: the Get involved email says "I live near <application address>"; could use the
 address the resident searched instead.

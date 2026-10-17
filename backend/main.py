@@ -297,6 +297,7 @@ def briefing(req: BriefingRequest):
     facts = {
         "application": app_,
         "spec": _cached_spec(db, app_),
+        "infill": plan["metadata"].get("infill"),
         "narration": json.loads(narration_file.read_text()) if narration_file.exists() else None,
         "involved": involvement(db, app_),
         "site": site_facts.for_application(db, app_),

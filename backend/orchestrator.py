@@ -17,6 +17,7 @@ from typing import Awaitable, Callable
 
 import ordis_geom as geom
 
+from . import infill
 from .agents import builder, data_agent, interpreter, narrator
 from .agents.spec import BuildingSpec, Extraction, SpecRejected
 from .blender_bridge.runner import run_build
@@ -71,7 +72,8 @@ async def run(address: str, emit: Emit, app_number: str | None = None, include_c
     if not fresh and saved_file.exists():
         saved = json.loads(saved_file.read_text())
         glb = saved["result"].get("glb_url", "").removeprefix("/files/")
-        if glb and (CACHE / glb).exists():
+        # Runs saved before the current infill rules are re-run (cheap: every agent step is cached).
+        if glb and (CACHE / glb).exists() and saved["result"].get("site_rules") == infill.VERSION:
             await emit("system", "cache", f"Replaying the saved run for {norm} (saved {saved['saved_at'][:16]}, "
                        "no AI calls)", None)
             for agent, kind, message, data in saved["events"]:
@@ -126,7 +128,7 @@ async def _run_pipeline(address: str, emit: Emit, app_number: str | None, includ
     db = store.connect()
     status = provider_status()
     result: dict = {"ok": False, "address": address, "provider": status, "limitations": LIMITATIONS,
-                    "sources": store.sources(db)}
+                    "sources": store.sources(db), "site_rules": infill.VERSION}
 
     async def flush_provider_notes(agent):
         """Report provider switches (e.g. Gemini quota reached -> Groq) in the console."""
@@ -202,9 +204,25 @@ async def _run_pipeline(address: str, emit: Emit, app_number: str | None, includ
                    {"related": [r["app_number"] for r in related]})
     site = store.find_lot(db, app)
     buildings = store.context_buildings(db, site, CONTEXT_RADIUS_M)
+    # Infill: if the application keeps the buildings on the lot, they stay standing and the new
+    # massing goes on the free part of the lot (see backend/infill.py).
+    infill_plan = infill.plan([app.get("description") or ""] + [r["description"] for r in related], site.lot,
+                              [b for b in buildings if b["on_site"]])
+    if infill_plan:
+        site.notes.append(infill.note(infill_plan))
+        if infill_plan["fits"]:
+            kept = set(infill_plan["kept"])
+            for b in buildings:
+                if b["id"] in kept:
+                    b["on_site"] = False  # shown in both the existing and the "with proposal" view
     neighbours = data_agent.neighbour_stats(buildings)
     result["site"] = {"parcel_ids": site.parcel_ids, "lot_area_m2": round(site.lot.area, 1),
                       "origin_epsg2952": site.origin, "notes": site.notes, "neighbours": neighbours}
+    if infill_plan:
+        result["site"]["infill"] = {"evidence": infill_plan["evidence"], "fits": infill_plan["fits"],
+                                    "kept": len(infill_plan["kept"]), "replaced": len(infill_plan["replaced"]),
+                                    "free_m2": round(infill_plan["free"].area) if infill_plan["free"] else None,
+                                    "separation_m": infill.SEPARATION_M}
     await emit("data", "result", f"Lot {site.lot.area:.0f} m2 from {len(site.parcel_ids)} parcel(s); "
                f"{neighbours['count']} buildings within {CONTEXT_RADIUS_M} m", result["site"])
 
@@ -240,24 +258,37 @@ async def _run_pipeline(address: str, emit: Emit, app_number: str | None, includ
                f"confidence {spec.confidence:.2f}, {len(spec.assumptions)} assumption(s)", result["spec"])
 
     # ---------------------------------------------------------------- Builder Agent
-    scene_key = f"{_safe(app['app_number'])}_{_hash([spec.model_dump(), PLAN_VERSION, CONTEXT_RADIUS_M])}"
+    lot_ring = geom.clean_ring([tuple(p) for p in store.local_ring(site.lot, site.origin)])
+    build_ring, infill_meta = lot_ring, None  # where the new massing may go
+    if infill_plan and infill_plan["fits"]:
+        build_ring = geom.clean_ring([tuple(p) for p in store.local_ring(infill_plan["free"], site.origin)])
+        infill_meta = {"version": infill.VERSION, "evidence": infill_plan["evidence"],
+                       "kept": len(infill_plan["kept"]), "free_m2": round(infill_plan["free"].area)}
+    scene_key = (f"{_safe(app['app_number'])}_"
+                 f"{_hash([spec.model_dump(), PLAN_VERSION, CONTEXT_RADIUS_M] + ([infill_meta] if infill_meta else []))}")
     scene_dir = CACHE / "scenes" / scene_key
     glb = scene_dir / "scene.glb"
     result["scene_key"] = scene_key
-    lot_ring = geom.clean_ring([tuple(p) for p in store.local_ring(site.lot, site.origin)])
     if glb.exists():
         await emit("builder", "cache", "Scene for this application and spec already built", None)
     else:
-        _, axis, length, width = geom.min_area_rect(lot_ring)
-        lot_info = {"area_m2": round(geom.area(lot_ring), 1), "long_side_m": round(length, 1),
-                    "short_side_m": round(width, 1), "vertices": len(lot_ring)}
+        _, axis, length, width = geom.min_area_rect(build_ring)
+        lot_info = {"area_m2": round(geom.area(build_ring), 1), "long_side_m": round(length, 1),
+                    "short_side_m": round(width, 1), "vertices": len(build_ring)}
+        if infill_meta:
+            lot_info["note"] = ("LOT is the free part of the property beside existing buildings that the application "
+                                "keeps; build only there.")
         await emit("builder", "start", "Planning Blender tool calls", {"lot": lot_info})
         if provider:
-            steps, reasoning, fell_back, why = await builder.plan_proposal(provider, spec, lot_ring, lot_info,
+            steps, reasoning, fell_back, why = await builder.plan_proposal(provider, spec, build_ring, lot_info,
                                                                            attempt_logger("builder"))
         else:
-            steps = builder.relax_separation(builder.fallback_steps(spec), lot_ring, spec)
+            steps = builder.relax_separation(builder.fallback_steps(spec), build_ring, spec)
             reasoning, fell_back, why = "Rule-based plan generated directly from the spec.", True, "no LLM"
+        if infill_meta:  # towers based on "Lot" must use the free part, registered as "Buildable"
+            for s in steps:
+                if s["tool"] == "add_tower" and s["args"].get("base") == "Lot":
+                    s["args"]["base"] = "Buildable"
         await flush_provider_notes("builder")
         if fell_back:
             await emit("builder", "warn", f"Using the rule-based plan ({why})", None)
@@ -274,11 +305,14 @@ async def _run_pipeline(address: str, emit: Emit, app_number: str | None, includ
             {"tool": "load_street_trees", "args": {"trees": store.context_trees(db, site, CONTEXT_RADIUS_M)}},
             {"tool": "create_lot", "args": {"polygon": [list(p) for p in lot_ring]}},
         ]
+        if infill_meta:
+            context.append({"tool": "create_lot", "args": {"polygon": [list(p) for p in build_ring],
+                                                           "name": "Buildable", "register_only": True}})
         plan = {"version": PLAN_VERSION, "metadata": {
             "application_id": app["app_number"], "address": app["address"], "status": app["status"],
             "application_url": app["application_url"], "use_type": spec.use_type,
             "total_storeys": spec.total_storeys, "height_m": spec.height_m, "height_stated": spec.height_stated,
-            "confidence": spec.confidence}, "steps": context + steps}
+            "confidence": spec.confidence, "infill": infill_meta}, "steps": context + steps}
         scene_dir.mkdir(parents=True, exist_ok=True)
         (scene_dir / "plan.json").write_text(json.dumps(plan))
 

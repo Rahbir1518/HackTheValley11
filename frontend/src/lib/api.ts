@@ -90,6 +90,8 @@ export interface RunResult {
     parcel_ids: number[];
     notes: string[];
     neighbours: { count: number; median_m?: number; tallest_m?: number; radius_m?: number };
+    /** The application keeps buildings on the lot: they stay standing and the new massing uses the free part. */
+    infill?: { evidence: string; fits: boolean; kept: number; replaced: number; free_m2: number | null; separation_m: number };
   };
   narration?: Narration;
   glb_url?: string;
@@ -204,6 +206,9 @@ export interface BlockProposal {
   masses: { ring: [number, number][]; z0: number; top: number; storeys: number; part: string }[];
   /** Scene objects standing on this lot today (shown as replaced). */
   replaces: string[];
+  /** Buildings on the lot the application says stay (shown standing; massing placed beside them). */
+  keeps: number;
+  keeps_evidence: string | null;
   /** Homes in registered rental buildings on the lot today (RentSafeTO). */
   rental_units: number;
   /** Heritage Register status of entries on the lot. */

@@ -135,8 +135,9 @@ def stated_rows(spec: dict) -> list[tuple[str, str]]:
     return rows
 
 
-def estimated_lines(spec: dict) -> list[str]:
-    """Same wording as the viewer's "Estimated · visible rules" box."""
+def estimated_lines(spec: dict, infill: dict | None = None) -> list[str]:
+    """Same wording as the viewer's "Estimated · visible rules" box. `infill`: the scene plan's
+    metadata when the application keeps the buildings on its lot."""
     fields = {a["field"] for a in spec["assumptions"]}
     out = []
     if "total_storeys" in fields:
@@ -151,7 +152,11 @@ def estimated_lines(spec: dict) -> list[str]:
         out.append(f"Podium of {spec['podium_storeys']} storeys")
     if "tower_setback_m" in fields:
         out.append(f"Tower set back {spec['tower_setback_m']:g} m from the podium edge")
-    out.append("Footprint from the property boundary (real setbacks unknown)")
+    if infill:
+        out.append(f"Footprint: the free part of the lot ({infill['free_m2']:,} m²) beside the existing "
+                   "buildings the application keeps")
+    else:
+        out.append("Footprint from the property boundary (real setbacks unknown)")
     return out
 
 
@@ -254,7 +259,7 @@ def render(facts: dict, snapshot: bytes | None, today: dt.date | None = None) ->
         stated = [_rows_table(st, stated_rows(spec), col_w)]
         for q in spec.get("stated_facts", [])[:2]:
             stated += [Spacer(1, 4), Paragraph(st.text(f"“{q}”"), st.quote)]
-        estimated = [Paragraph(st.text(f"• {line}"), st.cell) for line in estimated_lines(spec)]
+        estimated = [Paragraph(st.text(f"• {line}"), st.cell) for line in estimated_lines(spec, facts.get("infill"))]
         estimated += [Spacer(1, 4), Paragraph(st.text(
             f"{len(spec['assumptions'])} documented assumptions · Ordis is {round(spec['confidence'] * 100)}% sure "
             "the numbers describe the proposed building."), st.small)]

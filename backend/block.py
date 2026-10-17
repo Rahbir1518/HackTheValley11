@@ -20,7 +20,7 @@ import ordis_geom as geom
 import shapely
 from shapely.geometry import Polygon, shape
 
-from . import orchestrator, sunlight
+from . import infill, orchestrator, sunlight
 from .agents import builder, data_agent, interpreter
 from .agents.spec import BuildingSpec, SpecRejected
 from .data import store
@@ -29,7 +29,7 @@ from .llm.providers import LLMError, get_provider
 SEARCH_RADIUS_M = 300
 SCENE_RADIUS_M = orchestrator.CONTEXT_RADIUS_M  # a lot's centre must sit inside the modelled area
 MAX_NEW_READS = 6  # Interpreter calls per request; free LLM tiers are small
-VERSION = 2  # 2: rental homes and heritage on each lot
+VERSION = 3  # 2: rental homes and heritage on each lot; 3: infill keeps retained buildings
 
 
 def _translate(steps: list[dict], dx: float, dy: float) -> list[dict]:
@@ -73,10 +73,12 @@ def _summary(spec: BuildingSpec) -> dict:
     }
 
 
-def _context_features(plan: dict) -> list[tuple[int, shapely.Geometry, bool]]:
+def _context_features(plan: dict) -> list[tuple[int, shapely.Geometry, bool, float]]:
+    """(feature index, footprint, standing on the main lot, height) for every context building."""
     for s in plan["steps"]:
         if s["tool"] == "load_context_buildings":
-            return [(i, shapely.make_valid(shape(f["geometry"])), bool(f["properties"].get("on_site")))
+            return [(i, shapely.make_valid(shape(f["geometry"])), bool(f["properties"].get("on_site")),
+                     float(f["properties"].get("height") or 0))
                     for i, f in enumerate(s["args"]["geojson"]["features"])]
     return []
 
@@ -162,7 +164,17 @@ async def build(scene_dir: Path, fresh: bool = False, on_progress=None) -> dict:
 
         # Massing in the main scene's frame.
         lot_ring = geom.clean_ring(store.local_ring(site.lot, main_site.origin))
+        lot_poly = Polygon(lot_ring)
+        on_lot = [{"id": i, "geom": gm, "height": h} for i, gm, on_main, h in features
+                  if not on_main and gm.area > 0 and gm.intersection(lot_poly).area > 0.5 * gm.area]
+        # Infill: buildings the application keeps stay; new massing goes on the free part.
+        kept_plan = infill.plan([chosen.get("description") or ""] + [r["description"] for r in related],
+                                lot_poly, on_lot)
+        kept = set(kept_plan["kept"]) if kept_plan and kept_plan["fits"] else set()
+        build_ring = geom.clean_ring(list(kept_plan["free"].exterior.coords)[:-1]) if kept else lot_ring
         built = _built_plan(chosen["app_number"])
+        if built and kept and not built["metadata"].get("infill"):
+            built = None  # built before the infill rules: it covers the whole lot
         try:
             if built:
                 bx, by = built["metadata"].get("origin_epsg2952") or store.find_lot(db, chosen).origin
@@ -170,8 +182,8 @@ async def build(scene_dir: Path, fresh: bool = False, on_progress=None) -> dict:
                                     ("create_lot", "create_podium", "add_tower")], bx - ox, by - oy)
                 massing = "builder"
             else:
-                steps = [{"tool": "create_lot", "args": {"polygon": lot_ring}}] + \
-                    builder.relax_separation(builder.fallback_steps(spec), lot_ring, spec)
+                steps = [{"tool": "create_lot", "args": {"polygon": build_ring}}] + \
+                    builder.relax_separation(builder.fallback_steps(spec), build_ring, spec)
                 massing = "rules"
             masses = sunlight.proposal_masses(steps)
         except (ValueError, geom.GeometryError) as e:
@@ -181,9 +193,7 @@ async def build(scene_dir: Path, fresh: bool = False, on_progress=None) -> dict:
         if not masses:
             continue
 
-        lot_poly = Polygon(lot_ring)
-        replaces = [i for i, gm, on_main in features
-                    if not on_main and gm.area > 0 and gm.intersection(lot_poly).area > 0.5 * gm.area]
+        replaces = [b["id"] for b in on_lot if b["id"] not in kept]
         c = site.lot.centroid
         proposals.append({
             "app_number": chosen["app_number"],
@@ -203,6 +213,8 @@ async def build(scene_dir: Path, fresh: bool = False, on_progress=None) -> dict:
             "rental_units": sum(r["units"] or 0 for r in store.site_rentals(db, chosen, site.lot)),
             "heritage": [h["status_label"] for h in store.site_heritage(db, chosen, site.lot)["on_site"]],
             "replaces": [f"Existing_{i:04d}" for i in replaces],
+            "keeps": len(kept),  # buildings on the lot the application says stay
+            "keeps_evidence": kept_plan["evidence"] if kept else None,
         })
 
     proposals.sort(key=lambda p: p["distance_m"])

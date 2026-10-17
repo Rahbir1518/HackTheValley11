@@ -316,10 +316,14 @@ def load_street_trees(trees):
 
 # ------------------------------------------------------------------ proposal tools
 
-def create_lot(polygon, name="Lot"):
+def create_lot(polygon, name="Lot", register_only=False):
+    """The property boundary slab. register_only=True just registers a footprint that later
+    tools can build on (e.g. the free part of a lot beside buildings that stay)."""
     ring = _ring(polygon, "polygon")
-    obj = _prism_object(name, [[ring]], 0.0, 0.2, ("lot", "lot"), _empty("Site"))
     _registry[name] = {"footprint": ring, "z0": 0.0, "top": 0.0, "storeys": 0, "storey_height": 0}
+    if register_only:
+        return {"name": name, "area_m2": round(geom.area(ring), 1), "registered_only": True}
+    obj = _prism_object(name, [[ring]], 0.0, 0.2, ("lot", "lot"), _empty("Site"))
     obj["role"] = "lot"
     obj["area_m2"] = round(geom.area(ring), 1)
     return {"name": name, "area_m2": obj["area_m2"]}
