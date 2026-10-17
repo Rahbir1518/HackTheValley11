@@ -127,6 +127,30 @@ export async function getSunlight(sceneKey: string, date: string, block = false)
   return data;
 }
 
+export interface HeritageEntry {
+  address: string;
+  status: string;
+  status_label: string;
+  district: string | null;
+  building_type: string | null;
+  built: string | null;
+  description: string | null;
+  distance_m: number;
+}
+
+/** What stands on a proposal's lot today (GET /api/site). */
+export interface SiteFacts {
+  heritage: { on_site: HeritageEntry[]; nearby_count: number; nearby: HeritageEntry[]; districts: string[]; radius_m: number };
+  heritage_note: string;
+  rentals: { address: string; units: number | null; storeys: number | null; year_built: number | null; property_type: string | null }[];
+  rental_units: number;
+  /** Sentences quoted from the application text (stated). */
+  rental_mentions: string[];
+  rental_rule: string | null;
+  rental_links: { label: string; url: string }[];
+  registry_note: string;
+}
+
 /** One other active proposal placed in the current scene ("your block in 5 years"). */
 export interface BlockProposal {
   app_number: string;
@@ -154,10 +178,15 @@ export interface BlockProposal {
   masses: { ring: [number, number][]; z0: number; top: number; storeys: number; part: string }[];
   /** Scene objects standing on this lot today (shown as replaced). */
   replaces: string[];
+  /** Homes in registered rental buildings on the lot today (RentSafeTO). */
+  rental_units: number;
+  /** Heritage Register status of entries on the lot. */
+  heritage: string[];
 }
 
 export interface Block {
   main: string;
+  main_rental_units: number;
   radius_m: number;
   key: string;
   proposals: BlockProposal[];

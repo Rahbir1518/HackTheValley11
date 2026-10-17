@@ -262,6 +262,35 @@ def render(facts: dict, snapshot: bytes | None, today: dt.date | None = None) ->
                             _section(st, "Estimated by Ordis (visible rules)", [_box(estimated, col_w - 16, SELECT)])],
                            [col_w, col_w]), Spacer(1, 12)]
 
+    # ---- on this site today (registers + the application's own words)
+    site = facts.get("site") or {}
+    rentals, heritage = site.get("rentals") or [], (site.get("heritage") or {}).get("on_site") or []
+    mentions = site.get("rental_mentions") or []
+    if rentals or heritage or mentions:
+        col_w = (WIDTH - 0.22 * inch) / 2
+        left = []
+        if rentals:
+            left.append(Paragraph(st.text(
+                f"Registered rental building{'s' if len(rentals) > 1 else ''} on the lot: "
+                + "; ".join(f"{r['address']} ({r['units'] or '?'} homes"
+                            + (f", built {r['year_built']}" if r.get("year_built") else "") + ")" for r in rentals[:3])
+                + "."), st.body))
+        for h in heritage[:2]:
+            left.append(Paragraph(st.text(f"Heritage: {h['address']}, {h['status_label']}"
+                                          + (f", built {h['built']}" if h.get("built") else "") + "."), st.body))
+        if mentions:
+            left.append(Paragraph("The application says:", st.small))
+            left += [Paragraph(st.text(f"“{m}”"), st.quote) for m in mentions[:2]]
+        elif rentals:
+            left.append(Paragraph(st.text("The application text doesn't say whether these homes stay."), st.small))
+        right = [Paragraph(st.text(t), st.small) for t in
+                 ([site["rental_rule"]] if site.get("rental_rule") else [])
+                 + ([site["heritage_note"]] if heritage else [])
+                 + (["Tenant Hotline (Federation of Metro Tenants' Associations): 416-921-9494, torontotenants.org."]
+                    if rentals or mentions else [])]
+        story += _section(st, "On this site today", [_columns([left, right], [col_w, col_w])])
+        story.append(Spacer(1, 12))
+
     # ---- sunlight
     if sun:
         col_w = (WIDTH - 0.22 * inch) / 2

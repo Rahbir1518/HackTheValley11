@@ -86,7 +86,9 @@ CREATE TABLE IF NOT EXISTS nbhd_housing (
     median_owner_cost REAL,           -- median monthly shelter costs, owned ($)
     median_rent REAL,                 -- median monthly shelter costs, rented ($)
     pct_owner_30 REAL,                -- % owner households spending 30%+ of income on shelter
-    pct_tenant_30 REAL                -- % tenant households spending 30%+ of income on shelter
+    pct_tenant_30 REAL,               -- % tenant households spending 30%+ of income on shelter
+    population INTEGER,               -- 2021 Census (25% sample)
+    avg_household_size REAL
 );
 
 CREATE TABLE IF NOT EXISTS address_points (
@@ -101,3 +103,63 @@ CREATE TABLE IF NOT EXISTS address_points (
     lon REAL, lat REAL
 );
 CREATE INDEX IF NOT EXISTS address_points_street ON address_points(street_norm, lo_num);
+
+-- City Heritage Register (Part IV designated, Part V in a Heritage Conservation District, or Listed)
+CREATE TABLE IF NOT EXISTS heritage (
+    id INTEGER PRIMARY KEY,
+    address TEXT,
+    status TEXT,                      -- Part IV / Part V / Listed
+    district TEXT,                    -- Heritage Conservation District name (Part V)
+    building_type TEXT,
+    description TEXT,
+    built TEXT,                       -- construction year as recorded
+    demolished TEXT,                  -- YEAR_DEMOL when recorded
+    x REAL, y REAL,
+    lon REAL, lat REAL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS heritage_idx USING rtree(id, minx, maxx, miny, maxy);
+
+-- Registered rental apartment buildings (RentSafeTO: 3+ storeys and 10+ units), latest evaluation each
+CREATE TABLE IF NOT EXISTS rental_buildings (
+    id INTEGER PRIMARY KEY,
+    rsn TEXT,                         -- City registration number
+    address TEXT,
+    units INTEGER,                    -- CONFIRMED UNITS
+    storeys INTEGER,
+    year_built INTEGER,
+    property_type TEXT,               -- PRIVATE / TCHC / SOCIAL HOUSING
+    score INTEGER,                    -- latest building evaluation score
+    evaluated TEXT,
+    x REAL, y REAL,
+    lon REAL, lat REAL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS rental_buildings_idx USING rtree(id, minx, maxx, miny, maxy);
+
+CREATE TABLE IF NOT EXISTS green_spaces (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    area_class TEXT,                  -- Park, OTHER_CITY, OTHER_TRCA, Traffic Island, ...
+    geom BLOB
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS green_spaces_idx USING rtree(id, minx, maxx, miny, maxy);
+
+CREATE TABLE IF NOT EXISTS schools (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    type_desc TEXT,                   -- English Public, English Separate, French Public, Private, ...
+    board TEXT,
+    address TEXT,
+    x REAL, y REAL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS schools_idx USING rtree(id, minx, maxx, miny, maxy);
+
+-- TTC stops from the GTFS feed, with the modes and routes that serve them
+CREATE TABLE IF NOT EXISTS transit_stops (
+    id INTEGER PRIMARY KEY,
+    stop_id TEXT,
+    name TEXT,
+    modes TEXT,                       -- comma list: subway, lrt, streetcar, bus
+    routes TEXT,                      -- comma list of route numbers
+    x REAL, y REAL
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS transit_stops_idx USING rtree(id, minx, maxx, miny, maxy);

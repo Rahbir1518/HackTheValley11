@@ -73,8 +73,33 @@ DATASETS = {
         "resource": "neighbourhood-profiles-2021-158-model",  # XLSX download
         "dump_fields": None,
     },
+    "heritage": {
+        "package": "heritage-register",
+        "resource": "Heritage Register Data",  # zipped point shapefile, WGS84
+        "dump_fields": None,
+    },
+    "rentals": {
+        "package": "apartment-building-evaluation",
+        "resource": "Apartment Building Evaluations 2023 - current.csv",  # RentSafeTO, has lat/lon
+        "dump_fields": None,
+    },
+    "green_spaces": {
+        "package": "green-spaces",
+        "resource": "Green Spaces - 2952.csv",
+        "dump_fields": None,
+    },
+    "schools": {
+        "package": "school-locations-all-types",
+        "resource": "School locations-all types data - 2952.csv",
+        "dump_fields": None,
+    },
+    "transit": {
+        "package": "ttc-routes-and-schedules",
+        "resource": "TTC Routes and Schedules Data",  # GTFS zip
+        "dump_fields": None,
+    },
 }
-FILE_EXT = {"massing": "zip", "profiles": "xlsx"}
+FILE_EXT = {"massing": "zip", "profiles": "xlsx", "heritage": "zip", "transit": "zip"}
 # Tables each dataset writes (used by --only to replace just those).
 TABLES = {
     "dev_apps": ["dev_apps", "dev_apps_idx"],
@@ -84,7 +109,14 @@ TABLES = {
     "trees": ["street_trees", "street_trees_idx"],
     "neighbourhoods": ["neighbourhoods", "neighbourhoods_idx"],
     "profiles": ["nbhd_housing"],
+    "heritage": ["heritage", "heritage_idx"],
+    "rentals": ["rental_buildings", "rental_buildings_idx"],
+    "green_spaces": ["green_spaces", "green_spaces_idx"],
+    "schools": ["schools", "schools_idx"],
+    "transit": ["transit_stops", "transit_stops_idx"],
 }
+# Columns added after a database was first built (CREATE TABLE IF NOT EXISTS won't add them).
+MIGRATIONS = [("nbhd_housing", "population", "INTEGER"), ("nbhd_housing", "avg_household_size", "REAL")]
 
 
 # ---------------------------------------------------------------- download
@@ -156,6 +188,11 @@ def to_float(v):
 def to_int(v):
     f = to_float(v)
     return int(f) if f is not None else None
+
+
+def proper(v) -> str:
+    """QUEEN'S PARK -> Queen's Park (str.title would give Queen'S)."""
+    return " ".join(w[:1].upper() + w[1:].lower() for w in str(v or "").split())
 
 
 def blank_to_none(v):
@@ -291,6 +328,8 @@ PROFILE_ROWS = {
     "median_rent": "Median monthly shelter costs for rented dwellings ($)",
     "pct_owner_30": "% of owner households spending 30% or more of its income on shelter costs",
     "pct_tenant_30": "% of tenant households spending 30% or more of its income on shelter costs",
+    "population": "Total - Age groups of the population - 25% sample data",
+    "avg_household_size": "Average household size",
 }
 
 
@@ -312,6 +351,116 @@ def load_profiles(db, path: Path) -> None:
         f"INSERT INTO nbhd_housing (id, name, {', '.join(cols)}) VALUES ({','.join('?' * (len(cols) + 2))})",
         ((int(numbers[i]), names[i], *[to_float(found[k][i]) for k in cols]) for i in range(len(names))))
     print(f"  nbhd_housing: {len(names)} neighbourhoods")
+
+
+def load_heritage(db, zip_path: Path) -> None:
+    import io
+    t = Transformer.from_crs(4326, TARGET_CRS, always_xy=True)
+    with zipfile.ZipFile(zip_path) as z:
+        stem = next(n for n in z.namelist() if n.lower().endswith(".shp"))[:-4]
+        reader = shapefile.Reader(shp=io.BytesIO(z.read(stem + ".shp")), shx=io.BytesIO(z.read(stem + ".shx")),
+                                  dbf=io.BytesIO(z.read(stem + ".dbf")))
+        rows = []
+        for sr in reader.iterShapeRecords():
+            if not sr.shape.points:
+                continue
+            rec = sr.record.as_dict()
+            lon, lat = sr.shape.points[0][:2]
+            x, y = t.transform(lon, lat)
+            text = lambda k: blank_to_none(str(rec.get(k) or ""))  # noqa: E731
+            rows.append((len(rows), proper(rec.get("ADDRESS")), text("STATUS"),
+                         text("HTG_CONSER"), text("BUILDING_T"), text("DESCRIPTIO"), text("CONSTRUCTI"),
+                         text("YEAR_DEMOL"), x, y, lon, lat))
+    db.executemany("INSERT INTO heritage VALUES (" + ",".join("?" * 12) + ")", rows)
+    db.executemany("INSERT INTO heritage_idx VALUES (?,?,?,?,?)", ((r[0], r[8], r[8], r[9], r[9]) for r in rows))
+    print(f"  heritage: {len(rows)} rows")
+
+
+def load_rentals(db, path: Path) -> None:
+    """Latest RentSafeTO evaluation per registered building (RSN)."""
+    t = Transformer.from_crs(4326, TARGET_CRS, always_xy=True)
+    latest: dict[str, dict] = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            key = (r["YEAR EVALUATED"] or "", r["EVALUATION COMPLETED ON"] or "")
+            if r["RSN"] not in latest or key > latest[r["RSN"]]["_key"]:
+                latest[r["RSN"]] = r | {"_key": key}
+    rows = []
+    for r in latest.values():
+        lon, lat = to_float(r["LONGITUDE"]), to_float(r["LATITUDE"])
+        if lon is None or lat is None:
+            continue
+        x, y = t.transform(lon, lat)
+        rows.append((len(rows), r["RSN"], proper(r["SITE ADDRESS"]), to_int(r["CONFIRMED UNITS"]),
+                     to_int(r["CONFIRMED STOREYS"]), to_int(r["YEAR BUILT"]), blank_to_none(r["PROPERTY TYPE"]),
+                     to_int(r["CURRENT BUILDING EVAL SCORE"]), blank_to_none(r["EVALUATION COMPLETED ON"]),
+                     x, y, lon, lat))
+    db.executemany("INSERT INTO rental_buildings VALUES (" + ",".join("?" * 13) + ")", rows)
+    db.executemany("INSERT INTO rental_buildings_idx VALUES (?,?,?,?,?)",
+                   ((r[0], r[9], r[9], r[10], r[10]) for r in rows))
+    print(f"  rental_buildings: {len(rows)} rows")
+
+
+def load_green_spaces(db, path: Path) -> None:
+    rows, geoms = [], []
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if r["geometry"]:
+                geoms.append(shape(json.loads(r["geometry"])))  # already EPSG:2952
+                rows.append((proper(r["AREA_NAME"]), r["AREA_CLASS"]))
+    insert_geoms(db, "green_spaces", rows, np.array(geoms, dtype=object), "name, area_class")
+    print(f"  green_spaces: {len(rows)} rows")
+
+
+def load_schools(db, path: Path) -> None:
+    rows = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if not r["geometry"]:
+                continue
+            g = json.loads(r["geometry"])  # EPSG:2952
+            x, y = (g["coordinates"][0] if g["type"] == "MultiPoint" else g["coordinates"])[:2]
+            board = r["BOARD_NAME"] if r["BOARD_NAME"] not in ("", "None") else None
+            rows.append((len(rows), proper(r["NAME"]), blank_to_none(r["SCHOOL_TYPE_DESC"]), board,
+                         blank_to_none(r["ADDRESS_FULL"]), x, y))
+    db.executemany("INSERT INTO schools VALUES (?,?,?,?,?,?,?)", rows)
+    db.executemany("INSERT INTO schools_idx VALUES (?,?,?,?,?)", ((r[0], r[5], r[5], r[6], r[6]) for r in rows))
+    print(f"  schools: {len(rows)} rows")
+
+
+def load_transit(db, zip_path: Path) -> None:
+    """GTFS stops plus the modes/routes serving each (via trips and stop_times)."""
+    import io
+    t = Transformer.from_crs(4326, TARGET_CRS, always_xy=True)
+    with zipfile.ZipFile(zip_path) as z:
+        def read(name):
+            return csv.DictReader(io.TextIOWrapper(z.open(name), "utf-8-sig"))
+        routes = {}
+        for r in read("routes.txt"):
+            kind = {"1": "subway", "3": "bus"}.get(r["route_type"])
+            if r["route_type"] == "0":
+                kind = "lrt" if r["route_long_name"].startswith("Line") else "streetcar"
+            routes[r["route_id"]] = (kind or "other", r["route_short_name"])
+        trip_route = {r["trip_id"]: r["route_id"] for r in read("trips.txt")}
+        served: dict[str, set] = {}
+        reader = csv.reader(io.TextIOWrapper(z.open("stop_times.txt"), "utf-8-sig"))
+        head = next(reader)
+        ti, si = head.index("trip_id"), head.index("stop_id")
+        for row in reader:
+            served.setdefault(row[si], set()).add(trip_route.get(row[ti]))
+        rows = []
+        for s in read("stops.txt"):
+            lon, lat = to_float(s["stop_lon"]), to_float(s["stop_lat"])
+            serving = [routes[r] for r in served.get(s["stop_id"], ()) if r in routes]
+            if lon is None or not serving:
+                continue
+            x, y = t.transform(lon, lat)
+            modes = sorted({m for m, _ in serving})
+            names = sorted({n for _, n in serving}, key=lambda n: (len(n), n))
+            rows.append((len(rows), s["stop_id"], s["stop_name"], ",".join(modes), ",".join(names), x, y))
+    db.executemany("INSERT INTO transit_stops VALUES (?,?,?,?,?,?,?)", rows)
+    db.executemany("INSERT INTO transit_stops_idx VALUES (?,?,?,?,?)", ((r[0], r[5], r[5], r[6], r[6]) for r in rows))
+    print(f"  transit_stops: {len(rows)} rows")
 
 
 def rings_to_geom(points, parts) -> shapely.Geometry | None:
@@ -385,11 +534,16 @@ def main() -> None:
         target.unlink(missing_ok=True)
     db = sqlite3.connect(target)
     db.executescript((ROOT / "backend" / "data" / "schema.sql").read_text())
+    for table, column, kind in MIGRATIONS:
+        if column not in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
     print("Building database")
     loaders = {"dev_apps": load_dev_apps, "address_points": load_address_points,
                "parcels": load_parcels, "massing": load_massing, "trees": load_trees,
-               "neighbourhoods": load_neighbourhoods, "profiles": load_profiles}
+               "neighbourhoods": load_neighbourhoods, "profiles": load_profiles, "heritage": load_heritage,
+               "rentals": load_rentals, "green_spaces": load_green_spaces, "schools": load_schools,
+               "transit": load_transit}
     for key in keys:
         for table in TABLES[key]:
             db.execute(f"DELETE FROM {table}")

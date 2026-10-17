@@ -29,7 +29,7 @@ from .llm.providers import LLMError, get_provider
 SEARCH_RADIUS_M = 300
 SCENE_RADIUS_M = orchestrator.CONTEXT_RADIUS_M  # a lot's centre must sit inside the modelled area
 MAX_NEW_READS = 6  # Interpreter calls per request; free LLM tiers are small
-VERSION = 1
+VERSION = 2  # 2: rental homes and heritage on each lot
 
 
 def _translate(steps: list[dict], dx: float, dy: float) -> list[dict]:
@@ -199,6 +199,9 @@ async def build(scene_dir: Path, fresh: bool = False, on_progress=None) -> dict:
             "masses": [{"ring": [[round(x, 2), round(y, 2)] for x, y in m["ring"]], "z0": round(m["z0"], 2),
                         "top": round(m["top"], 2), "storeys": m["storeys"], "part": m["part"]} for m in masses],
             "replaces_features": replaces,
+            # What stands on the lot today (registers, not a demolition notice).
+            "rental_units": sum(r["units"] or 0 for r in store.site_rentals(db, chosen, site.lot)),
+            "heritage": [h["status_label"] for h in store.site_heritage(db, chosen, site.lot)["on_site"]],
             "replaces": [f"Existing_{i:04d}" for i in replaces],
         })
 
@@ -207,6 +210,7 @@ async def build(scene_dir: Path, fresh: bool = False, on_progress=None) -> dict:
         "version": VERSION,
         "candidates_key": key,
         "main": main_app["app_number"],
+        "main_rental_units": sum(r["units"] or 0 for r in store.site_rentals(db, main_app, main_site.lot)),
         "radius_m": SEARCH_RADIUS_M,
         "proposals": proposals,
         "skipped": skipped,

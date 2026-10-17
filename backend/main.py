@@ -141,6 +141,19 @@ def _housing(db, app_: dict) -> dict | None:
     return ctx
 
 
+@app.get("/api/site")
+def site(app_number: str):
+    """What stands on the proposal's lot today: Heritage Register entries (on the lot and nearby)
+    and registered rental apartment buildings, plus what the application text says about rental."""
+    from . import site_facts
+
+    db = store.connect()
+    try:
+        return site_facts.for_application(db, store.get_application(db, app_number))
+    except store.DataError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/housing")
 def housing(app_number: str):
     """Housing context for the application's neighbourhood (2021 Census, 158 neighbourhoods)."""
@@ -230,6 +243,7 @@ def briefing(req: BriefingRequest):
     from fastapi.responses import Response
 
     from . import briefing as briefing_pdf
+    from . import site_facts
 
     scene_dir = _scene_dir(req.scene_key)
     image = None
@@ -254,6 +268,7 @@ def briefing(req: BriefingRequest):
         "spec": _cached_spec(db, app_),
         "narration": json.loads(narration_file.read_text()) if narration_file.exists() else None,
         "involved": involvement(db, app_),
+        "site": site_facts.for_application(db, app_),
         "sunlight": sunlight_result(req.scene_key, req.date),
         "block": block,
         "block_sunlight": sunlight_result(req.scene_key, req.date, block=True) if block else None,

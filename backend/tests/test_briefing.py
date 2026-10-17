@@ -48,3 +48,11 @@ def test_renders_one_page_pdf_with_and_without_optional_parts():
 def test_planner_name_reads_naturally():
     assert briefing._planner_name("DOE, JANE") == "JANE DOE"
     assert briefing._hours(1.25) == "1 h 15 min" and briefing._hours(0.5) == "30 min"
+
+
+def test_site_section_quotes_the_application_and_the_rule():
+    site = {"rentals": [{"address": "240 Wellesley St E", "units": 554, "year_built": 1971}],
+            "heritage": {"on_site": []}, "rental_mentions": ["27 existing rental dwelling units would be replaced."],
+            "rental_rule": "Rental homes must be replaced.", "heritage_note": "n/a"}
+    pdf = briefing.render(_facts(site=site), None, today=dt.date(2026, 10, 17))
+    assert len(re.findall(rb"/Type\s*/Page[^s]", pdf)) == 1

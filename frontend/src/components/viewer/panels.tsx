@@ -18,7 +18,7 @@ import {
   Play,
   Sun as SunIcon,
 } from "lucide-react";
-import { API_URL, type Agent, type Block, type RunResult, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
+import { API_URL, type Agent, type Block, type RunResult, type SiteFacts, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
 import { blockColor, type SceneNode } from "@/lib/scene";
 import { formatToronto, minutesOfDayToronto, sunTimes, type Sun } from "@/lib/sun";
 import { Ordi, StatusChip } from "@/components/brand";
@@ -262,6 +262,7 @@ export function ProposalPanel({
               </p>
             ))}
           </div>
+          {app && <SiteToday appNumber={app.app_number} />}
           {app && (
             <div className="space-y-2 border-b border-line pb-3.5">
               <p className="text-[11px] text-muted">
@@ -355,6 +356,94 @@ export function ProposalPanel({
   );
 }
 
+// ------------------------------------------------------------------ on this site today
+
+const LANDLORD: Record<string, string> = { PRIVATE: "private landlord", TCHC: "Toronto Community Housing", "SOCIAL HOUSING": "social housing" };
+
+/** Heritage and registered rental homes on the lot. A rental building on the lot is not a
+ *  demolition notice: the application's own words are quoted, and the rule is explained. */
+function SiteToday({ appNumber }: { appNumber: string }) {
+  const res = useFetch<SiteFacts>(`${API_URL}/api/site?app_number=${encodeURIComponent(appNumber)}`);
+  const [rules, setRules] = useState(false);
+  const d = res?.data;
+  if (!d) return null;
+  const h = d.heritage;
+  const quiet = !d.rentals.length && !h.on_site.length && !d.rental_mentions.length;
+  if (quiet) {
+    return h.nearby_count ? (
+      <p className="text-[11px] leading-[1.5] text-muted">
+        No heritage property or registered rental building on this lot. {h.nearby_count} heritage{" "}
+        {h.nearby_count === 1 ? "property" : "properties"} within {h.radius_m} m
+        {h.districts.length ? ` (${h.districts.join(", ")} Heritage Conservation District)` : ""}.
+      </p>
+    ) : null;
+  }
+  return (
+    <div className="space-y-3 rounded-md border border-line p-3">
+      <p className={`${mono} text-[9px] text-muted`}>ON THIS SITE TODAY</p>
+      {d.rentals.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[13px] text-black">
+            {d.rentals.length === 1 ? "A registered rental building" : `${d.rentals.length} registered rental buildings`} ·{" "}
+            {d.rental_units.toLocaleString()} homes
+          </p>
+          {d.rentals.slice(0, 3).map((r) => (
+            <p key={r.address} className="text-[10px] text-muted">
+              {r.address} · {r.units ?? "?"} units{r.year_built ? ` · built ${r.year_built}` : ""}
+              {r.property_type ? ` · ${LANDLORD[r.property_type] ?? r.property_type.toLowerCase()}` : ""}
+            </p>
+          ))}
+        </div>
+      )}
+      {d.rental_mentions.length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-muted">The application says:</p>
+          {d.rental_mentions.map((m) => (
+            <p key={m} className="border-l-2 border-prop pl-2.5 text-[11px] italic leading-[1.5] text-black">
+              “{m}”
+            </p>
+          ))}
+        </div>
+      ) : (
+        d.rentals.length > 0 && <p className="text-[11px] leading-[1.5] text-muted">The application text doesn&apos;t say whether these homes stay.</p>
+      )}
+      {h.on_site.map((e) => (
+        <div key={e.address + e.status} className="space-y-0.5">
+          <p className="text-[12px] text-black">
+            Heritage · {e.status_label}
+            {e.built ? ` · built ${e.built}` : ""}
+          </p>
+          <p className="text-[10px] leading-[1.5] text-muted">
+            {e.address}
+            {e.district ? ` · ${e.district} district` : ""}
+            {e.description ? ` · ${e.description.length > 140 ? `${e.description.slice(0, 140)}…` : e.description}` : ""}
+          </p>
+        </div>
+      ))}
+      <button onClick={() => setRules(!rules)} className="text-[11px] text-prop-ink">
+        {rules ? "⌄" : "›"} What the rules say
+      </button>
+      {rules && (
+        <div className="space-y-1.5 text-[10px] leading-[1.5] text-muted">
+          {d.rental_rule && <p>{d.rental_rule}</p>}
+          {h.on_site.length > 0 && <p>{d.heritage_note}</p>}
+          {d.rentals.length > 0 && <p>{d.registry_note}</p>}
+          {d.rental_links.map((l) => (
+            <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="block text-prop-ink hover:underline">
+              {l.label} ↗
+            </a>
+          ))}
+        </div>
+      )}
+      {h.nearby_count > 0 && (
+        <p className="text-[10px] text-muted">
+          {h.nearby_count} more heritage {h.nearby_count === 1 ? "property" : "properties"} within {h.radius_m} m.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ block in 5 years
 
 function storeysText(storeys: number, stated: boolean) {
@@ -426,6 +515,15 @@ export function BlockPanel({
               {noHomes} of {all.length} don&apos;t state a number of homes.
             </p>
           )}
+          {(() => {
+            const rentals = block.main_rental_units + block.proposals.reduce((a, p) => a + p.rental_units, 0);
+            return rentals > 0 ? (
+              <p className="rounded-md bg-side p-2.5 text-[11px] leading-[1.5] text-black">
+                {rentals.toLocaleString()} homes in registered rental buildings stand on these lots today. Each application says
+                whether they stay; open one to read what it states.
+              </p>
+            ) : null;
+          })()}
 
           <div className="border-t border-line">
             <div className="flex items-center gap-2.5 border-b border-line py-2.5">
@@ -459,6 +557,14 @@ export function BlockPanel({
                         {p.massing === "builder" ? "Massing planned by the Builder Agent when Ordis modelled it." : "Rule-based massing from the stated numbers (not yet modelled on its own)."}
                         {p.replaces.length ? ` Replaces ${p.replaces.length} building${p.replaces.length > 1 ? "s" : ""} on the lot today.` : ""}
                       </p>
+                      {(p.rental_units > 0 || p.heritage.length > 0) && (
+                        <p className="text-[10px] leading-[1.5] text-black">
+                          On the lot today:{" "}
+                          {[p.rental_units > 0 ? `registered rental building, ${p.rental_units.toLocaleString()} homes` : null, ...p.heritage.map((h) => `heritage, ${h.toLowerCase()}`)]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      )}
                       <div className="flex gap-3 pt-0.5">
                         <a href={`/viewer?address=${encodeURIComponent(address)}&app=${encodeURIComponent(p.app_number)}`} className="text-prop-ink hover:underline">
                           Open on its own →

@@ -280,6 +280,53 @@ def housing_context(db, x: float, y: float) -> dict | None:
             "renters": me["renters"], "indicators": compare, "census_year": 2021, "neighbourhood_count": len(rows)}
 
 
+# ------------------------------------------------------------------ what stands on a lot today
+
+HERITAGE_STATUS = {
+    "Part IV": "Designated (Part IV of the Ontario Heritage Act)",
+    "Part V": "In a Heritage Conservation District (Part V)",
+    "Listed": "Listed on the Heritage Register (not designated)",
+}
+ON_LOT_M = 5.0  # register points sit at the address, which can be just outside the parcel line
+
+
+def _points_near(db, table: str, geom: shapely.Geometry, pad: float) -> list[dict]:
+    minx, miny, maxx, maxy = geom.bounds
+    rows = db.execute(f"SELECT t.* FROM {table} t JOIN {table}_idx i ON t.id = i.id "
+                      "WHERE i.minx >= ? AND i.maxx <= ? AND i.miny >= ? AND i.maxy <= ?",
+                      (minx - pad, maxx + pad, miny - pad, maxy + pad)).fetchall()
+    return [dict(r) | {"distance_m": round(geom.distance(Point(r["x"], r["y"])), 1)} for r in rows]
+
+
+def _same_address(app: dict, address: str | None) -> bool:
+    """Is `address` one of the application's street numbers on the same street?"""
+    parsed = parse_address(address or "")
+    rng = parse_street_num(app.get("street_num"))
+    return bool(parsed and rng and parsed[1] == app.get("street_norm") and rng[0] <= parsed[0] <= rng[1])
+
+
+def site_heritage(db, app: dict, lot: shapely.Geometry, nearby_m: float = 100) -> dict:
+    """Heritage Register entries on the lot and within `nearby_m` of it (demolished ones left out)."""
+    rows = [r for r in _points_near(db, "heritage", lot, nearby_m) if not r["demolished"]]
+    for r in rows:
+        r["status_label"] = HERITAGE_STATUS.get(r["status"], r["status"])
+        r["on_site"] = r["distance_m"] <= ON_LOT_M or _same_address(app, r["address"])
+    keep = ("address", "status", "status_label", "district", "building_type", "built", "description", "distance_m")
+    on_site = [{k: r[k] for k in keep} for r in rows if r["on_site"]]
+    near = sorted((r for r in rows if not r["on_site"] and r["distance_m"] <= nearby_m), key=lambda r: r["distance_m"])
+    districts = sorted({r["district"] for r in rows if r["district"]})
+    return {"on_site": on_site, "nearby_count": len(near), "nearby": [{k: r[k] for k in keep} for r in near[:5]],
+            "districts": districts, "radius_m": nearby_m}
+
+
+def site_rentals(db, app: dict, lot: shapely.Geometry) -> list[dict]:
+    """Registered rental apartment buildings (RentSafeTO) standing on the lot."""
+    rows = _points_near(db, "rental_buildings", lot, 40)
+    hits = [r for r in rows if r["distance_m"] <= ON_LOT_M or _same_address(app, r["address"])]
+    keep = ("address", "units", "storeys", "year_built", "property_type", "score", "evaluated", "rsn")
+    return sorted(({k: r[k] for k in keep} for r in hits), key=lambda r: -(r["units"] or 0))
+
+
 # ------------------------------------------------------------------ local frame
 
 def to_local(geom: shapely.Geometry, origin) -> shapely.Geometry:
