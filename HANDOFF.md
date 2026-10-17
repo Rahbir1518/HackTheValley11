@@ -230,8 +230,16 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   screen (`/api/proposal`): Blender preview, narration, stated facts, rental/heritage with the application's words,
   next meeting, planner (Email / Call), Watch, "Open the interactive 3D model" (web viewer in a browser tab).
 - The emulator reaches the laptop via `adb reverse tcp:8000/3000` (`npm run ports`), so URLs stay `localhost`
-  (an origin Clerk dev instances accept). On a real phone, set `EXPO_PUBLIC_API_URL`/`WEB_URL` to the laptop's
-  LAN address instead.
+  (an origin Clerk dev instances accept).
+- **Real phone through a tunnel** (event wifi usually blocks phone-to-laptop traffic): the web app proxies
+  `/ordis-api/*` to the backend (`next.config.ts` rewrites; `ORDIS_API_PROXY` overrides the target), so one
+  `ngrok http 3000` serves both. Set `NEXT_PUBLIC_API_URL=/ordis-api` in `frontend/.env.local`, point
+  `mobile/.env.local` at `https://<name>.ngrok-free.app/ordis-api` and `.../`, then `npx expo start --tunnel`
+  (Expo's own tunnel for the JS bundle) and scan the QR code in Expo Go. `allowedDevOrigins` lists ngrok and
+  trycloudflare domains (Next dev otherwise refuses them); the app sends `ngrok-skip-browser-warning` so free
+  ngrok doesn't answer with its warning page. Checked: the live run stream (SSE), images, POST + Bearer token
+  and the whole viewer work through the proxy. Gotcha: in Git Bash, `NEXT_PUBLIC_API_URL=/ordis-api` on the
+  command line becomes a Windows path; put it in `.env.local` (or set `MSYS_NO_PATHCONV=1`).
 - Checked: `npx tsc --noEmit`, `npx expo lint`, `npx expo-doctor` (20/20), `npx expo export --platform android`.
 - Gotchas: Expo's AGENTS.md says to read the versioned docs (APIs change every SDK); Clerk Expo 4.x uses the
   "future" API (`signIn.emailCode.sendCode/verifyCode`, `signIn.finalize()`, `signUp.verifications.*`), not

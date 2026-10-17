@@ -3,6 +3,10 @@ import { useCallback } from "react";
 
 export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000";
 export const WEB_URL = process.env.EXPO_PUBLIC_WEB_URL ?? "http://localhost:3000";
+/** Free ngrok tunnels answer with a warning page unless this header is sent. */
+export const TUNNEL_HEADERS = { "ngrok-skip-browser-warning": "1" };
+/** An API-served image (Blender preview), loadable through a tunnel too. */
+export const apiImage = (path: string) => ({ uri: `${API_URL}${path}`, headers: TUNNEL_HEADERS });
 
 export interface NearbyApplication {
   app_number: string;
@@ -81,7 +85,7 @@ export function useApi() {
       try {
         r = await fetch(`${API_URL}${path}`, {
           ...init,
-          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          headers: { "Content-Type": "application/json", ...TUNNEL_HEADERS, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         });
       } catch {
         throw new ApiError(`Can't reach the Ordis API at ${API_URL}. Is the backend running (and 'npm run ports' done)?`);

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Chip, Label, Notice, Row } from "@/components/ui";
-import { API_URL, plannerName, storeysText, useApi, WEB_URL, type Place, type Proposal } from "@/lib/api";
+import { apiImage, plannerName, storeysText, useApi, WEB_URL, type Place, type Proposal } from "@/lib/api";
 import { color } from "@/lib/theme";
 
 /** Light markdown from the Narrator: drop the markers, keep the words. */
@@ -81,7 +81,7 @@ export default function ProposalScreen() {
 
         {p.preview_url ? (
           <View style={{ gap: 6 }}>
-            <Image source={{ uri: `${API_URL}${p.preview_url}` }} style={s.preview} contentFit="cover" transition={200} />
+            <Image source={apiImage(p.preview_url)} style={s.preview} contentFit="cover" transition={200} />
             <Text style={s.caption}>3D massing approximation from the application, among the City&apos;s buildings.</Text>
           </View>
         ) : (

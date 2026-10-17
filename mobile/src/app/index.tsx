@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Chip, Label, Notice, Wordmark } from "@/components/ui";
-import { API_URL, useApi, type Nearby, type NearbyApplication, type Place } from "@/lib/api";
+import { apiImage, useApi, type Nearby, type NearbyApplication, type Place } from "@/lib/api";
 import { color } from "@/lib/theme";
 
 const DEMO_PLACES = ["135 Liberty St", "100 Queen St W", "240 Wellesley St E", "5250 Yonge St"];
@@ -157,7 +157,7 @@ function ApplicationCard({ item, address }: { item: NearbyApplication; address: 
       style={({ pressed }) => [s.card, pressed && { backgroundColor: color.side }]}
     >
       {item.preview_url ? (
-        <Image source={{ uri: `${API_URL}${item.preview_url}` }} style={s.thumb} contentFit="cover" transition={150} />
+        <Image source={apiImage(item.preview_url)} style={s.thumb} contentFit="cover" transition={150} />
       ) : (
         <View style={[s.thumb, { alignItems: "center", justifyContent: "center", backgroundColor: color.soft }]}>
           <Text style={{ color: color.muted, fontSize: 10, textAlign: "center" }}>{item.modelled ? "3D on\nfirst open" : "No 3D"}</Text>
