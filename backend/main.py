@@ -181,6 +181,69 @@ def capacity_result(scene_key: str, block: bool = False) -> dict:
     return capacity.analyse(db, (ox, oy), proposals) | {"block": block}
 
 
+# ------------------------------------------------------------------ mobile companion
+
+def _saved_model(app_number: str) -> dict | None:
+    """The most recent model Ordis built for an application: narration, preview image, scene key."""
+    scenes = sorted((orchestrator.CACHE / "scenes").glob(f"{orchestrator._safe(app_number)}_*/narration.json"),
+                    key=lambda p: p.stat().st_mtime, reverse=True)
+    for n in scenes:
+        if (n.parent / "scene.glb").exists():
+            return {"scene_key": n.parent.name, "narration": json.loads(n.read_text()),
+                    "preview_url": f"/files/scenes/{n.parent.name}/preview.png" if (n.parent / "preview.png").exists() else None}
+    return None
+
+
+@app.get("/api/nearby")
+def nearby(lat: float, lon: float, radius_m: float = Query(400, le=1000)):
+    """What's proposed around a GPS position (mobile "Near me"): the nearest address and the active
+    applications within `radius_m`, with Ordis' saved summary where one exists."""
+    from pyproj import Transformer
+
+    if not (43.5 < lat < 43.9 and -79.7 < lon < -79.1):
+        raise HTTPException(422, "This position is outside the City of Toronto.")
+    x, y = Transformer.from_crs(4326, 2952, always_xy=True).transform(lon, lat)
+    db = store.connect()
+    here = db.execute("SELECT address_full, x, y FROM address_points WHERE x BETWEEN ? AND ? AND y BETWEEN ? AND ? "
+                      "ORDER BY (x - ?) * (x - ?) + (y - ?) * (y - ?) LIMIT 1",
+                      (x - 150, x + 150, y - 150, y + 150, x, x, y, y)).fetchone()
+    apps = store.nearby_applications(db, x, y, radius_m)
+    out = []
+    for a in apps[:20]:
+        saved = _saved_model(a["app_number"]) if a["modelled"] else None
+        out.append({k: a[k] for k in ("app_number", "address", "type_name", "status", "distance_m", "modelled",
+                                      "date_submitted")}
+                   | {"headline": (saved or {}).get("narration", {}).get("headline"),
+                      "preview_url": (saved or {}).get("preview_url")})
+    return {"here": here["address_full"] if here else None, "radius_m": radius_m, "applications": out}
+
+
+@app.get("/api/proposal")
+def proposal(app_number: str):
+    """Everything the mobile app shows for one application, in one call."""
+    from . import site_facts
+
+    db = store.connect()
+    try:
+        app_ = store.get_application(db, app_number)
+    except store.DataError as e:
+        raise HTTPException(404, str(e))
+    saved = _saved_model(app_number)
+    spec = _cached_spec(db, app_)
+    facts = site_facts.for_application(db, app_)
+    return {
+        "application": {k: app_[k] for k in ("app_number", "address", "type_name", "status", "date_submitted",
+                                             "application_url", "description", "ward_name")},
+        "narration": (saved or {}).get("narration"),
+        "preview_url": (saved or {}).get("preview_url"),
+        "scene_key": (saved or {}).get("scene_key"),
+        "spec": spec,
+        "rentals": facts["rentals"], "rental_units": facts["rental_units"], "rental_mentions": facts["rental_mentions"],
+        "rental_rule": facts["rental_rule"], "heritage_on_site": facts["heritage"]["on_site"],
+        "involved": involvement(db, app_),
+    }
+
+
 # ------------------------------------------------------------------ saved places (signed-in users)
 
 class PlaceIn(BaseModel):

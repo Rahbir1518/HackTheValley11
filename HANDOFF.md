@@ -53,6 +53,12 @@ frontend/ (Next.js 16, React 19, Tailwind 4, react-three-fiber, Clerk)
   src/app/viewer/page.tsx       3D viewer (Explore + Sunlight study)
   src/components/viewer/        Viewport.tsx (three.js scene), panels.tsx (side panel, timeline, imagery window…)
   src/components/brand.tsx      Identity, StatusChip, Ordi mascot (eyes follow the cursor)
+mobile/ (Expo SDK 58, Expo Router, @clerk/expo; Android companion, runs in Expo Go)
+  src/app/_layout.tsx           ClerkProvider + Stack; Stack.Protected sends signed-out users to sign-in
+  src/app/sign-in.tsx           email-code sign-in (new emails get an account); same Clerk instance as the web
+  src/app/index.tsx             "Near me" (GPS / address search / demo chips) and "My places" (synced, watch stars)
+  src/app/proposal/[app].tsx    summary, stated facts, on this site today, meeting + planner, 3D model link
+  src/lib/api.ts                API client (Clerk Bearer token), types; scripts/ports.js = adb reverse 8000/3000
 ```
 
 Design source: Figma file `iv5GDMvRqBaROOgLuV0MXD` (frames: Public landing, Sign in, Ask Ordis, 3D viewer,
@@ -72,6 +78,9 @@ cd frontend; npm install; copy .env.example .env.local   # Clerk keys
 # every time (two terminals, repo root / frontend)
 backend\.venv\Scripts\python -m uvicorn backend.main:app --port 8000   # add --reload while developing
 cd frontend; npm run dev                                               # http://localhost:3000
+
+# mobile (Android emulator; one-time: cd mobile; npm install; copy .env.example .env.local + Clerk key)
+cd mobile; npm run android      # adb reverse 8000/3000, then Expo Go opens the app on the emulator
 ```
 
 - **Backend changes need a backend restart** (unless started with `--reload`). The Next dev server hot-reloads.
@@ -82,7 +91,7 @@ cd frontend; npm run dev                                               # http://
 - Reload some datasets in place: `backend\.venv\Scripts\python scripts\ingest.py --only heritage rentals`
   (keys: dev_apps parcels address_points massing trees neighbourhoods profiles heritage rentals green_spaces
   schools transit; add `--refresh` to re-download). New columns on old databases are added by `MIGRATIONS`.
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (69 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (71 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
@@ -213,6 +222,21 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 
 **Other endpoints**: `/api/health`, `/api/applications`, `/api/ward`, `/api/sources`, `/api/cached`,
 `/api/involved`, `/api/housing`, `/api/ask`, `/api/block`, `/api/briefing`, `/api/site`, `/api/capacity`, `/api/street`, `/api/me/places`, `/files/...` (scenes, previews, heatmaps).
+
+**Mobile companion** (`mobile/`, Android emulator + Expo Go)
+- Same Clerk account as the web (email code; Google is web-only for now). Saved and watched places sync both ways
+  through `/api/me/places`. "Near me": GPS (`/api/nearby?lat=&lon=`), an address search (geocodes via
+  `/api/applications`, then `/api/nearby`) and demo chips (the emulator's default GPS is in California). Proposal
+  screen (`/api/proposal`): Blender preview, narration, stated facts, rental/heritage with the application's words,
+  next meeting, planner (Email / Call), Watch, "Open the interactive 3D model" (web viewer in a browser tab).
+- The emulator reaches the laptop via `adb reverse tcp:8000/3000` (`npm run ports`), so URLs stay `localhost`
+  (an origin Clerk dev instances accept). On a real phone, set `EXPO_PUBLIC_API_URL`/`WEB_URL` to the laptop's
+  LAN address instead.
+- Checked: `npx tsc --noEmit`, `npx expo lint`, `npx expo-doctor` (20/20), `npx expo export --platform android`.
+- Gotchas: Expo's AGENTS.md says to read the versioned docs (APIs change every SDK); Clerk Expo 4.x uses the
+  "future" API (`signIn.emailCode.sendCode/verifyCode`, `signIn.finalize()`, `signUp.verifications.*`), not
+  `setActive`; `npx expo lint` setup failed on a react-dom 19.3.1 vs react 19.3.0 peer conflict until
+  `npx expo install react-dom` pinned the SDK's version; npm 11 blocks core-js's postinstall banner (harmless).
 
 ## Data gotchas worth remembering
 
