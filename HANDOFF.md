@@ -72,7 +72,7 @@ cd frontend; npm run dev                                               # http://
   (list in `demo_addresses.txt`; already saved: 135 Liberty St, 5250 Yonge St).
 - Terminal-only pipeline run: `backend\.venv\Scripts\python -m backend.run "135 Liberty St"`.
 - After changing Blender materials: `backend\.venv\Scripts\python -m backend.rebuild_scenes` (no AI calls).
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (52 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (53 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)

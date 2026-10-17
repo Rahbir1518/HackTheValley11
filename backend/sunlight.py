@@ -61,11 +61,20 @@ def sun_steps(date: dt.date) -> list[tuple[dt.datetime, float, float]]:
 
 # ------------------------------------------------------------------ shadows
 
+def _polygonal(g: shapely.Geometry) -> shapely.Geometry | None:
+    """Only the polygon parts: make_valid can turn a bad City footprint into stray lines/points."""
+    parts = [p for p in shapely.get_parts(g) if p.geom_type in ("Polygon", "MultiPolygon") and not p.is_empty]
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 else shapely.union_all(parts)
+
+
 class Shadower:
     """Precomputed edges for a set of (polygon, height) prisms; casts their union shadow."""
 
     def __init__(self, prisms: list[tuple[shapely.Geometry, float]]):
-        self.prisms = [(g, h) for g, h in prisms if h > 0 and not g.is_empty]
+        prisms = [(_polygonal(g), h) for g, h in prisms]
+        self.prisms = [(g, h) for g, h in prisms if h > 0 and g is not None and not g.is_empty]
         self.geoms = np.array([g for g, _ in self.prisms], dtype=object)
         self.heights = np.array([h for _, h in self.prisms], dtype=float)
         self.bounds = shapely.bounds(self.geoms) if len(self.geoms) else np.zeros((0, 4))

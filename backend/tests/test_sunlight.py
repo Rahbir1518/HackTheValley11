@@ -75,3 +75,12 @@ def test_block_counts_every_proposal_and_replaced_buildings():
     assert both["stats"]["area_lost_any_m2"] > single["stats"]["area_lost_any_m2"]
     # The replaced building's own shadow disappears, which shows up as sun gained.
     assert both["stats"]["area_gained_1h_m2"] > 0 == single["stats"]["area_gained_1h_m2"]
+
+
+def test_shadower_ignores_line_parts_of_repaired_footprints():
+    # make_valid on a bad City footprint can return a collection with stray lines (100 Queen St W).
+    from shapely.geometry import GeometryCollection, LineString
+    s = sunlight.Shadower([(GeometryCollection([box(0, 0, 10, 10), LineString([(20, 0), (30, 0)])]), 10.0),
+                           (LineString([(40, 0), (50, 0)]), 10.0)])
+    assert len(s.prisms) == 1
+    assert math.isclose(s.shadow(45.0, 180.0).area, 200, rel_tol=1e-6)
