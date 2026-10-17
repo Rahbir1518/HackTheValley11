@@ -136,6 +136,10 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   tallest, homes stated, colour-keyed list. Sunlight study has an "All nearby proposals" toggle for the
   **combined** sun loss (`/api/sunlight?block=true`, cached as `sun_block_<set>_<date>`). Saved as
   `block.json` in the scene folder (invalidated when the set of nearby applications changes).
+- **Construction animation**: when a scene loads (and on Existing -> With proposal) the proposal rises floor by
+  floor (a clipping plane steps up one storey at a time, faces double-sided meanwhile) with a ticking
+  "26 storeys" chip; block-view proposals rise the same way when they appear. Plays once per scene and view
+  (not again after visiting the sunlight study); skipped with `prefers-reduced-motion`.
 - Clear progress card: steps tick off; on a refusal it says where it stopped, marks skipped steps and offers
   other nearby proposals that can be shown in 3D.
 
@@ -184,7 +188,7 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 
 1. ~~"Your block in 5 years"~~ (built).
 2. **"View from my window"**: click a neighbouring building -> camera at its window + % of sky blocked.
-3. **Construction animation**: the proposal rises floor by floor on load.
+3. ~~Construction animation~~ (built).
 4. Scale comparisons (landmark ghost, "≈ 37 houses stacked").
 5. Before/after wipe slider.
 6. One-page briefing PDF for community meetings.

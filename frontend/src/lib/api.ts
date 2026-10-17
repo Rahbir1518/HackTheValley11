@@ -38,6 +38,7 @@ export interface Spec {
   height_stated: boolean;
   storey_height_m: number;
   podium_storeys: number;
+  podium_storey_height_m: number;
   towers: { storeys: number; height_m: number; height_stated: boolean }[];
   tower_setback_m: number;
   units: number | null;

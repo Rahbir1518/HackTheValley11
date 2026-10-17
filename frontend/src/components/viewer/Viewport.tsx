@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { GizmoHelper, GizmoViewport, Grid, Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -44,6 +44,10 @@ export interface ViewportProps {
   block?: BlockProposal[] | null;
   selectedBlock?: string | null;
   onSelectBlock?: (appNumber: string | null) => void;
+  /** Construction animation: changing this token makes the proposal rise floor by floor. */
+  rise?: number;
+  /** Height of the top of each storey (from the spec), used to step the rise one storey at a time. */
+  storeyTops?: number[];
 }
 
 const CANVAS = "#edf0ef";
@@ -61,7 +65,7 @@ export default function Viewport(props: ViewportProps) {
     <Canvas
       shadows="percentage"
       camera={{ position: [170, 150, 210], fov: 40, near: 0.5, far: 6000 }}
-      gl={{ antialias: true, preserveDrawingBuffer: true }}
+      gl={{ antialias: true, preserveDrawingBuffer: true, localClippingEnabled: true }}
       onPointerMissed={() => props.tool === "select" && props.onSelect?.(null)}
     >
       <color attach="background" args={[night ? "#cfd6d5" : CANVAS]} />
@@ -139,10 +143,119 @@ function SunLight({ sun, shadows }: { sun: Sun; shadows: boolean }) {
 
 // ------------------------------------------------------------------ model
 
-function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoaded, layers, tool, annotation, block }: ViewportProps) {
+// ------------------------------------------------------------------ construction animation
+
+/** Clipping-plane height that clips nothing. */
+const OPEN = 1e6;
+/** Last rise token played per viewport + scene, so remounting a view doesn't replay it. */
+const risen = new Map<string, number>();
+
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** While rising, faces render double-sided so the open top reads as a building under construction. */
+function setUnderConstruction(materials: THREE.Material[], on: boolean) {
+  for (const m of materials) {
+    m.userData.side ??= m.side;
+    m.side = on ? THREE.DoubleSide : m.userData.side;
+    m.needsUpdate = true;
+  }
+}
+
+/** Seconds for n storeys to rise, one at a time. */
+const riseSeconds = (n: number) => Math.min(4.2, Math.max(1.8, n * 0.065));
+
+/** Moves each clipping plane to the top of the storeys built so far (progress p from 0 to 1). */
+function stepRise(rig: { plane: THREE.Plane; top: number; storeys: number }[], p: number) {
+  for (const r of rig) r.plane.constant = p >= 1 ? OPEN : (r.top * Math.ceil(Math.max(0, p) * r.storeys)) / r.storeys;
+}
+
+function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoaded, layers, tool, annotation, block, rise, storeyTops }: ViewportProps) {
   const { scene: original } = useGLTF(glbUrl);
-  // Each view gets its own copy so two canvases can show the same scene.
-  const scene = useMemo(() => original.clone(true), [original]);
+  // Each view gets its own copy so two canvases can show the same scene, and its own proposal
+  // materials so the construction clipping plane never leaks into another view.
+  const scene = useMemo(() => {
+    const copy = original.clone(true);
+    copy.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.material && isProposed(o)) m.material = Array.isArray(m.material) ? m.material.map((x) => x.clone()) : m.material.clone();
+    });
+    return copy;
+  }, [original]);
+
+  // ---- floor-by-floor rise: a clipping plane steps up one storey at a time
+  const build = useRef<{ clip: THREE.Plane; materials: THREE.Material[]; roof: number; top: number } | null>(null);
+  const anim = useRef<{ t0: number; shown: number } | null>(null);
+  const labelGroup = useRef<THREE.Group>(null);
+  const labelFinal = useRef<HTMLSpanElement>(null);
+  const labelLive = useRef<HTMLSpanElement>(null);
+
+  useLayoutEffect(() => {
+    const clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), OPEN);
+    const materials: THREE.Material[] = [];
+    let roof = 0;
+    let top = 0;
+    scene.updateWorldMatrix(true, true);
+    scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.material || !isProposed(o)) return;
+      for (const mat of Array.isArray(m.material) ? m.material : [m.material]) {
+        mat.clippingPlanes = [clip];
+        mat.clipShadows = true;
+        materials.push(mat);
+      }
+      if (!m.isMesh) return;
+      const y = new THREE.Box3().setFromObject(o).max.y;
+      top = Math.max(top, y);
+      // The roof of the tallest storey, not the mechanical penthouse above it.
+      if (!hasAncestor(o, (p) => /penthouse/i.test(p.name))) roof = Math.max(roof, y);
+    });
+    build.current = { clip, materials, roof, top };
+  }, [scene]);
+
+  useLayoutEffect(() => {
+    const key = `${id}|${glbUrl}`;
+    if (rise === undefined || !storeyTops?.length || risen.get(key) === rise) return;
+    risen.set(key, rise);
+    if (prefersReducedMotion() || !build.current) return;
+    build.current.clip.constant = 0; // before the first frame, so the finished building never flashes
+    setUnderConstruction(build.current.materials, true);
+    anim.current = { t0: performance.now(), shown: 0 };
+  }, [id, glbUrl, rise, storeyTops]);
+
+  useFrame(() => {
+    const a = anim.current;
+    const b = build.current;
+    if (!a || !b || !storeyTops?.length) return;
+    const n = storeyTops.length;
+    const p = (performance.now() - a.t0) / (riseSeconds(n) * 1000);
+    const live = labelLive.current;
+    const final = labelFinal.current;
+    if (p >= 1.12) {
+      // Hold on the last storey for a beat, then the rooftop and the usual label.
+      b.clip.constant = OPEN;
+      setUnderConstruction(b.materials, false);
+      anim.current = null;
+      if (labelGroup.current) labelGroup.current.position.y = 0;
+      if (live && final) {
+        live.style.display = "none";
+        final.style.display = "";
+      }
+      return;
+    }
+    const k = Math.min(n, Math.max(1, Math.ceil(p * n)));
+    if (k === a.shown) return;
+    a.shown = k;
+    const h = storeyTops[k - 1] * (b.roof / storeyTops[n - 1]);
+    b.clip.constant = h;
+    if (labelGroup.current) labelGroup.current.position.y = h - b.top; // the label sits 6 m above the finished top
+    if (live && final) {
+      final.style.display = "none";
+      live.style.display = "";
+      live.textContent = `${k} ${k === 1 ? "storey" : "storeys"}`;
+    }
+  });
 
   useEffect(() => {
     scene.traverse((o) => {
@@ -191,12 +304,18 @@ function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoade
       <primitive object={scene} onClick={click} />
       {selected && <SelectionOutline object={selected} key={`${id}-${selected.name}`} />}
       {annotation && showProposal && proposalTop && (
-        <Html position={proposalTop} center zIndexRange={[20, 0]}>
-          <div className="pointer-events-none flex items-center gap-2.5 whitespace-nowrap rounded-md border border-prop bg-white px-3 py-2 text-[11px] text-prop-ink shadow-sm">
-            <span className="size-[7px] bg-prop-ink" />
-            {annotation}
-          </div>
-        </Html>
+        <group position={proposalTop}>
+          {/* Moves with the rising storeys during the construction animation. */}
+          <group ref={labelGroup}>
+            <Html center zIndexRange={[20, 0]}>
+              <div className="pointer-events-none flex items-center gap-2.5 whitespace-nowrap rounded-md border border-prop bg-white px-3 py-2 text-[11px] text-prop-ink shadow-sm">
+                <span className="size-[7px] bg-prop-ink" />
+                <span ref={labelFinal}>{annotation}</span>
+                <span ref={labelLive} className="mono tabular-nums" style={{ display: "none" }} />
+              </div>
+            </Html>
+          </group>
+        </group>
       )}
     </>
   );
@@ -209,8 +328,10 @@ function BlockMasses({ proposals, selected, onSelect }: { proposals: BlockPropos
     () =>
       proposals.map((p, i) => {
         const color = new THREE.Color(blockColor(i));
-        const material = new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0.02 });
-        const lineMat = new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(0.62), transparent: true, opacity: 0.75 });
+        // Construction rise: starts at ground level (nothing shown) and steps up storey by storey.
+        const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), prefersReducedMotion() ? OPEN : 0);
+        const material = new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0.02, clippingPlanes: [plane], clipShadows: true });
+        const lineMat = new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(0.62), transparent: true, opacity: 0.75, clippingPlanes: [plane] });
         const meshes: THREE.BufferGeometry[] = [];
         const line: number[] = [];
         let top = 0;
@@ -238,17 +359,36 @@ function BlockMasses({ proposals, selected, onSelect }: { proposals: BlockPropos
         }
         const lines = new THREE.BufferGeometry();
         lines.setAttribute("position", new THREE.Float32BufferAttribute(line, 3));
-        return { p, color: blockColor(i), material, lineMat, meshes, lines, label };
+        return { p, color: blockColor(i), material, lineMat, meshes, lines, label, plane, top, storeys: Math.max(1, p.spec.total_storeys) };
       }),
     [proposals],
   );
-  // Labels mount a frame later: drei <Html> creates a React root, which must not happen inside
-  // the commit that creates this canvas (dev StrictMode re-runs effects and warns).
+  // They rise floor by floor when they appear; storey chips show once they have topped out
+  // (which also keeps drei <Html> from creating its React root inside the commit that
+  // creates this canvas, where dev StrictMode warns).
   const [labels, setLabels] = useState(false);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setLabels(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
+  const anim = useRef<{ t0: number; seconds: number; rig: { plane: THREE.Plane; top: number; storeys: number }[]; materials: THREE.Material[] } | null>(null);
+  useLayoutEffect(() => {
+    if (prefersReducedMotion()) {
+      setLabels(true); // eslint-disable-line react-hooks/set-state-in-effect -- browser-only preference
+      return;
+    }
+    const rig = items.map((it) => ({ plane: it.plane, top: it.top, storeys: it.storeys }));
+    const materials = items.map((it) => it.material);
+    setUnderConstruction(materials, true);
+    anim.current = { t0: performance.now(), seconds: riseSeconds(Math.max(...rig.map((r) => r.storeys))), rig, materials };
+  }, [items]);
+  useFrame(() => {
+    const a = anim.current;
+    if (!a) return;
+    const p = (performance.now() - a.t0) / (a.seconds * 1000);
+    stepRise(a.rig, p);
+    if (p >= 1) {
+      anim.current = null;
+      setUnderConstruction(a.materials, false);
+      setLabels(true);
+    }
+  });
   useEffect(
     () => () =>
       items.forEach((it) => {
