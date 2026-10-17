@@ -52,3 +52,26 @@ def test_analysis_reports_lost_sun_north_of_a_new_building():
     w = res["stats"]["worst_point"]
     assert w["y"] > 10  # shade falls north of the 30 m block in Toronto
     assert w["sun_with_h"] < w["sun_today_h"]
+
+
+def test_proposal_masses_keep_base_heights():
+    lot = [[-20, -20], [20, -20], [20, 20], [-20, 20]]
+    masses = sunlight.proposal_masses([
+        {"tool": "create_lot", "args": {"polygon": lot}},
+        {"tool": "create_podium", "args": {"footprint": lot, "storeys": 4, "storey_height": 4.5}},
+        {"tool": "add_tower", "args": {"name": "T", "base": "Podium", "storeys": 20, "storey_height": 3.0, "setback_m": 3}},
+    ])
+    assert [m["part"] for m in masses] == ["podium", "tower", "penthouse"]
+    assert masses[1]["z0"] == 18.0 and masses[1]["top"] == 78.0
+    assert masses[2]["z0"] == 78.0 and masses[2]["top"] == 83.0
+
+
+def test_block_counts_every_proposal_and_replaced_buildings():
+    single = sunlight.analyse(_plan(), dt.date(2026, 3, 21), radius=80)
+    # A second 30 m block to the west, on a lot where the existing 6 m building (feature 0) stands.
+    other = [[30, -30], [60, -30], [60, -10], [30, -10]]
+    block = {"proposals": [{"masses": [{"ring": other, "z0": 0, "top": 30.0}], "replaces_features": [0]}]}
+    both = sunlight.analyse(_plan(), dt.date(2026, 3, 21), radius=80, block=block)
+    assert both["stats"]["area_lost_any_m2"] > single["stats"]["area_lost_any_m2"]
+    # The replaced building's own shadow disappears, which shows up as sun gained.
+    assert both["stats"]["area_gained_1h_m2"] > 0 == single["stats"]["area_gained_1h_m2"]

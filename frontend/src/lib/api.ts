@@ -119,8 +119,54 @@ export interface SunlightStudy {
   affected_parcels: { mean_hours_lost: number; max_hours_lost: number; area_m2: number; address?: string }[];
 }
 
-export async function getSunlight(sceneKey: string, date: string): Promise<SunlightStudy> {
-  const r = await fetch(`${API_URL}/api/sunlight?scene_key=${encodeURIComponent(sceneKey)}&date=${date}`);
+export async function getSunlight(sceneKey: string, date: string, block = false): Promise<SunlightStudy> {
+  const r = await fetch(`${API_URL}/api/sunlight?scene_key=${encodeURIComponent(sceneKey)}&date=${date}${block ? "&block=true" : ""}`);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail ?? r.statusText);
+  return data;
+}
+
+/** One other active proposal placed in the current scene ("your block in 5 years"). */
+export interface BlockProposal {
+  app_number: string;
+  related: string[];
+  address: string;
+  status: string;
+  type_name: string;
+  date_submitted: string | null;
+  application_url: string | null;
+  distance_m: number;
+  spec: {
+    use_type: string;
+    total_storeys: number;
+    storeys_stated: boolean;
+    towers: number[];
+    height_m: number;
+    height_stated: boolean;
+    units: number | null;
+    gfa_m2: number | null;
+    confidence: number;
+  };
+  /** "builder": the Builder Agent's plan from an earlier run; "rules": rule-based from the stated numbers. */
+  massing: "builder" | "rules";
+  /** Local metres (x east, y north), same frame as the scene. */
+  masses: { ring: [number, number][]; z0: number; top: number; storeys: number; part: string }[];
+  /** Scene objects standing on this lot today (shown as replaced). */
+  replaces: string[];
+}
+
+export interface Block {
+  main: string;
+  radius_m: number;
+  key: string;
+  proposals: BlockProposal[];
+  skipped: { app_number: string; address: string; reason: string }[];
+  limitations: string[];
+  cached?: boolean;
+}
+
+export async function getBlock(sceneKey: string): Promise<Block> {
+  const r = await fetch(`${API_URL}/api/block?scene_key=${encodeURIComponent(sceneKey)}`);
   const data = await r.json();
   if (!r.ok) throw new Error(data.detail ?? r.statusText);
   return data;

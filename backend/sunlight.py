@@ -125,8 +125,9 @@ class Shadower:
 
 # ------------------------------------------------------------------ scene -> prisms
 
-def proposal_prisms(steps: list[dict]) -> list[tuple[shapely.Geometry, float]]:
-    """Replays the proposal steps (same geometry code as Blender) into ground-to-top prisms."""
+def proposal_masses(steps: list[dict]) -> list[dict]:
+    """Replays the proposal steps (same geometry code as Blender) into masses:
+    {"ring", "z0", "top", "storeys", "part"} with the mechanical penthouse as its own mass."""
     reg: dict[str, dict] = {}
     out = []
     for s in steps:
@@ -137,7 +138,7 @@ def proposal_prisms(steps: list[dict]) -> list[tuple[shapely.Geometry, float]]:
             ring = geom.clean_ring(a["footprint"])
             top = a["storeys"] * a["storey_height"]
             reg[a.get("name", "Podium")] = {"ring": ring, "top": top}
-            out.append((Polygon(ring), top))
+            out.append({"ring": ring, "z0": 0.0, "top": top, "storeys": a["storeys"], "part": "podium"})
         elif tool == "add_tower":
             base = reg.get(a.get("base"))
             if a.get("footprint"):
@@ -146,22 +147,31 @@ def proposal_prisms(steps: list[dict]) -> list[tuple[shapely.Geometry, float]]:
                 ring = geom.tower_footprint(base["ring"], a.get("setback_m", 0), a.get("tower_index", 0),
                                             a.get("tower_count", 1), a.get("separation_m", 25),
                                             a.get("max_floorplate_m2"))
-            top = (base["top"] if base else 0) + a["storeys"] * a["storey_height"]
+            z0 = base["top"] if base else 0.0
+            top = z0 + a["storeys"] * a["storey_height"]
             reg[a.get("name", "Tower")] = {"ring": ring, "top": top}
+            out.append({"ring": ring, "z0": z0, "top": top, "storeys": a["storeys"], "part": "tower"})
             # The rooftop mechanical penthouse (5 m) is part of the massing too.
             if a.get("mechanical_penthouse", True) and a["storeys"] >= 6:
-                out.append((Polygon(geom.scale_about_centroid(ring, 0.55)), top + 5.0))
-            out.append((Polygon(ring), top))
+                out.append({"ring": geom.scale_about_centroid(ring, 0.55), "z0": top, "top": top + 5.0,
+                            "storeys": 0, "part": "penthouse"})
     return out
 
 
-def context_prisms(steps: list[dict]):
+def proposal_prisms(steps: list[dict]) -> list[tuple[shapely.Geometry, float]]:
+    """Ground-to-top prisms of the proposal (shadows on flat ground only need the top)."""
+    return [(Polygon(m["ring"]), m["top"]) for m in proposal_masses(steps)]
+
+
+def context_prisms(steps: list[dict], also_on_site: frozenset[int] = frozenset()):
+    """Existing buildings split into (elsewhere, standing on a proposal's lot), plus parcels.
+    `also_on_site` holds feature indexes on other proposals' lots (the block view)."""
     existing, on_site, parcels = [], [], []
     for s in steps:
         if s["tool"] == "load_context_buildings":
-            for f in s["args"]["geojson"]["features"]:
+            for i, f in enumerate(s["args"]["geojson"]["features"]):
                 g = shapely.make_valid(shape(f["geometry"]))
-                target = on_site if f["properties"].get("on_site") else existing
+                target = on_site if f["properties"].get("on_site") or i in also_on_site else existing
                 target.append((g, float(f["properties"]["height"])))
         elif s["tool"] == "load_context_parcels":
             parcels = [shapely.make_valid(shape(f["geometry"])) for f in s["args"]["geojson"]["features"]]
@@ -170,9 +180,14 @@ def context_prisms(steps: list[dict]):
 
 # ------------------------------------------------------------------ analysis
 
-def analyse(plan: dict, date: dt.date, radius: float = 250.0) -> dict:
-    existing, on_site, parcels = context_prisms(plan["steps"])
+def analyse(plan: dict, date: dt.date, radius: float = 250.0, block: dict | None = None) -> dict:
+    """With `block` (see backend.block), every nearby proposal counts as built and the
+    buildings on their lots as removed, so the result is the combined sun loss."""
+    also = frozenset(i for p in (block or {}).get("proposals", []) for i in p["replaces_features"])
+    existing, on_site, parcels = context_prisms(plan["steps"], also)
     proposed = proposal_prisms(plan["steps"])
+    for p in (block or {}).get("proposals", []):
+        proposed += [(Polygon(m["ring"]), m["top"]) for m in p["masses"]]
     if not proposed:
         raise ValueError("this scene has no proposed building")
     E, O, P = Shadower(existing), Shadower(on_site), Shadower(proposed)
@@ -277,14 +292,22 @@ def heat_png(lost: np.ndarray, gained: np.ndarray) -> bytes:
     return _png(rgba)
 
 
-def run(scene_dir: Path, date: dt.date) -> dict:
-    """Cached analysis for a built scene and date; writes sun_<date>.png next to the scene."""
-    out_json = scene_dir / f"sun_{date.isoformat()}.json"
+def study_name(date: dt.date, block: dict | None = None) -> str:
+    """File stem for a cached study: sun_<date>, or sun_block_<set>_<date> for the combined one."""
+    return f"sun_block_{block['key']}_{date.isoformat()}" if block else f"sun_{date.isoformat()}"
+
+
+def run(scene_dir: Path, date: dt.date, block: dict | None = None) -> dict:
+    """Cached analysis for a built scene and date; writes <study_name>.png next to the scene."""
+    name = study_name(date, block)
+    out_json = scene_dir / f"{name}.json"
     if out_json.exists():
         return json.loads(out_json.read_text()) | {"cached": True}
     plan = json.loads((scene_dir / "plan.json").read_text())
-    res = analyse(plan, date)
-    (scene_dir / f"sun_{date.isoformat()}.png").write_bytes(heat_png(res.pop("lost"), res.pop("gained")))
+    res = analyse(plan, date, block=block)
+    (scene_dir / f"{name}.png").write_bytes(heat_png(res.pop("lost"), res.pop("gained")))
     res["application_id"] = plan.get("metadata", {}).get("application_id")
+    if block:
+        res["block"] = [p["app_number"] for p in block["proposals"]]
     out_json.write_text(json.dumps(res))
     return res

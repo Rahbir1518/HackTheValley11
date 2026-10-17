@@ -18,8 +18,8 @@ import {
   Play,
   Sun as SunIcon,
 } from "lucide-react";
-import { API_URL, type Agent, type RunResult, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
-import type { SceneNode } from "@/lib/scene";
+import { API_URL, type Agent, type Block, type RunResult, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
+import { blockColor, type SceneNode } from "@/lib/scene";
 import { formatToronto, minutesOfDayToronto, sunTimes, type Sun } from "@/lib/sun";
 import { Ordi, StatusChip } from "@/components/brand";
 
@@ -355,6 +355,161 @@ export function ProposalPanel({
   );
 }
 
+// ------------------------------------------------------------------ block in 5 years
+
+function storeysText(storeys: number, stated: boolean) {
+  return `${stated ? "" : "≈"}${storeys} storeys · ${stated ? "stated" : "estimated"}`;
+}
+
+/** Every active proposal nearby, keyed to its shade in the 3D view. Neutral: counts and
+ *  stated numbers only, with what was estimated marked. */
+export function BlockPanel({
+  result,
+  block,
+  loading,
+  error,
+  selected,
+  onSelect,
+  onSunlight,
+  onBack,
+}: {
+  result: RunResult;
+  block: Block | null;
+  loading: boolean;
+  error: string | null;
+  selected: string | null;
+  onSelect: (appNumber: string | null) => void;
+  onSunlight: () => void;
+  onBack: () => void;
+}) {
+  const [showSkipped, setShowSkipped] = useState(false);
+  const spec = result.spec;
+  const app = result.application;
+  const address = result.geocode?.address_full ?? "";
+  const all = block && spec ? [{ units: spec.units, storeys: spec.total_storeys }, ...block.proposals.map((p) => ({ units: p.spec.units, storeys: p.spec.total_storeys }))] : [];
+  const homes = all.reduce((a, p) => a + (p.units ?? 0), 0);
+  const noHomes = all.filter((p) => p.units == null).length;
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-[22px] leading-tight text-black">Your block in 5 years</p>
+        <p className="text-[12px] leading-[1.6] text-muted">
+          Every active application within {block?.radius_m ?? 300} m, shown as if built as proposed. Not a forecast: approval and timing are unknown.
+        </p>
+      </div>
+
+      {loading && (
+        <p className="animate-pulse rounded-md bg-side p-3 text-[11px] leading-[1.5] text-muted">
+          Reading nearby applications… The first time can take up to a minute; it&apos;s saved after that.
+        </p>
+      )}
+      {error && <p className="rounded-md bg-[#fbe9e4] p-3 text-[11px] text-[#a0331c]">{error}</p>}
+
+      {block && spec && app && (
+        <>
+          <div className="flex gap-2 text-center">
+            {(
+              [
+                [String(all.length), all.length === 1 ? "proposal" : "proposals"],
+                [String(Math.max(...all.map((p) => p.storeys))), "tallest, storeys"],
+                [homes ? homes.toLocaleString() : "—", "homes stated"],
+              ] as const
+            ).map(([v, label]) => (
+              <div key={label} className="flex-1 rounded-md bg-side px-2 py-2.5">
+                <p className="text-[17px] text-black">{v}</p>
+                <p className="text-[9px] text-muted">{label}</p>
+              </div>
+            ))}
+          </div>
+          {noHomes > 0 && homes > 0 && (
+            <p className="-mt-2 text-[10px] text-muted">
+              {noHomes} of {all.length} don&apos;t state a number of homes.
+            </p>
+          )}
+
+          <div className="border-t border-line">
+            <div className="flex items-center gap-2.5 border-b border-line py-2.5">
+              <span className="size-2.5 shrink-0 bg-prop-ink" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[11px] font-medium text-black">{app.address}</span>
+                <span className="block text-[9px] text-muted">This proposal · {storeysLabel(spec)}</span>
+              </span>
+            </div>
+            {block.proposals.map((p, i) => {
+              const open = selected === p.app_number;
+              return (
+                <div key={p.app_number} className={`border-b border-line ${open ? "bg-side" : ""}`}>
+                  <button onClick={() => onSelect(open ? null : p.app_number)} className="flex w-full items-center gap-2.5 py-2.5 text-left">
+                    <span className="size-2.5 shrink-0" style={{ background: blockColor(i) }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[11px] font-medium text-black">{p.address}</span>
+                      <span className="block text-[9px] text-muted">
+                        {storeysText(p.spec.total_storeys, p.spec.storeys_stated)} · {p.distance_m} m away
+                      </span>
+                    </span>
+                    <ChevronDown className={`size-3.5 shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} />
+                  </button>
+                  {open && (
+                    <div className="space-y-1.5 px-5 pb-3 text-[11px]">
+                      <Row label="Status" value={p.status} />
+                      {p.spec.height_stated && <Row label="Height" value={`${p.spec.height_m} m · stated`} />}
+                      {p.spec.units != null && <Row label="Homes" value={`${p.spec.units.toLocaleString()} · stated`} />}
+                      <Row label="Application" value={<span className={`${mono} text-[10px]`}>{p.app_number}</span>} />
+                      <p className="text-[10px] leading-[1.5] text-muted">
+                        {p.massing === "builder" ? "Massing planned by the Builder Agent when Ordis modelled it." : "Rule-based massing from the stated numbers (not yet modelled on its own)."}
+                        {p.replaces.length ? ` Replaces ${p.replaces.length} building${p.replaces.length > 1 ? "s" : ""} on the lot today.` : ""}
+                      </p>
+                      <div className="flex gap-3 pt-0.5">
+                        <a href={`/viewer?address=${encodeURIComponent(address)}&app=${encodeURIComponent(p.app_number)}`} className="text-prop-ink hover:underline">
+                          Open on its own →
+                        </a>
+                        {p.application_url && (
+                          <a href={p.application_url} target="_blank" rel="noreferrer" className="text-prop-ink hover:underline">
+                            City record ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <button onClick={onSunlight} className="flex h-[42px] w-full items-center justify-between rounded-md border border-line px-3 text-[12px] text-black hover:bg-side">
+            Combined sun loss
+            <SunIcon className="size-4" strokeWidth={1.5} />
+          </button>
+
+          {block.skipped.length > 0 && (
+            <div className="space-y-1.5">
+              <button onClick={() => setShowSkipped(!showSkipped)} className="text-[11px] text-muted hover:text-ink">
+                {showSkipped ? "⌄" : "›"} Not shown ({block.skipped.length})
+              </button>
+              {showSkipped &&
+                block.skipped.map((s) => (
+                  <p key={s.app_number} className="text-[10px] leading-[1.5] text-muted">
+                    <span className="text-black">{s.address}</span> · {s.reason}
+                  </p>
+                ))}
+            </div>
+          )}
+          <div className="space-y-1">
+            {block.limitations.map((l) => (
+              <p key={l} className="text-[10px] leading-[1.5] text-muted">
+                · {l}
+              </p>
+            ))}
+          </div>
+        </>
+      )}
+      <button onClick={onBack} className="text-[12px] text-prop-ink">
+        ← Back to this proposal
+      </button>
+    </div>
+  );
+}
+
 // ------------------------------------------------------------------ drill-ins
 
 function useFetch<T>(url: string | null) {
@@ -663,6 +818,9 @@ export function SunlightPanel({
   studyError,
   onBack,
   sceneOpen,
+  blockOn,
+  onBlock,
+  blockCount,
 }: {
   address: string;
   date: string;
@@ -678,6 +836,10 @@ export function SunlightPanel({
   studyError: string | null;
   onBack: () => void;
   sceneOpen: React.ReactNode;
+  blockOn: boolean;
+  onBlock: (v: boolean) => void;
+  /** Proposals in the block view including this one, once loaded. */
+  blockCount: number | null;
 }) {
   const year = date.slice(0, 4);
   return (
@@ -737,9 +899,18 @@ export function SunlightPanel({
           Hours of sun lost (whole day)
           {heatOn ? <Check className="size-4" /> : <SunIcon className="size-4" strokeWidth={1.5} />}
         </button>
+        <button
+          onClick={() => onBlock(!blockOn)}
+          className={`flex h-[42px] w-full items-center justify-between rounded-md px-3 text-[12px] ${blockOn ? "bg-select text-prop-ink" : "border border-line text-muted"}`}
+        >
+          {blockOn && blockCount ? `All ${blockCount} nearby proposals` : "All nearby proposals"}
+          {blockOn ? <Check className="size-4" /> : <LayersIcon className="size-4" strokeWidth={1.5} />}
+        </button>
         <p className="text-[12px] leading-[1.6] text-muted">
           {heatOn
-            ? "Ground that loses direct sun because of the proposal, sunrise to sunset."
+            ? blockOn
+              ? "Ground that loses direct sun if every active proposal nearby were built, sunrise to sunset."
+              : "Ground that loses direct sun because of the proposal, sunrise to sunset."
             : "Existing City context on one side. The same context with the proposal on the other."}
         </p>
       </div>

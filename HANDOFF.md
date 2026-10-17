@@ -31,6 +31,7 @@ backend/ (FastAPI)
   orchestrator.py        runs the agents, streams events, caches runs/specs/scenes/narration
   chat.py                Ask Ordis home chat router (address -> proposals, else cited/general answer)
   sunlight.py            hours of ground-level sun lost/gained (solar ephemeris + 2D shadow polygons)
+  block.py               "Your block in 5 years": every active nearby proposal placed in a built scene
   blender_bridge/        headless Blender subprocess, streams build steps
   main.py                API (see below)
 blender/
@@ -70,7 +71,7 @@ cd frontend; npm run dev                                               # http://
   (list in `demo_addresses.txt`; already saved: 135 Liberty St, 5250 Yonge St).
 - Terminal-only pipeline run: `backend\.venv\Scripts\python -m backend.run "135 Liberty St"`.
 - After changing Blender materials: `backend\.venv\Scripts\python -m backend.rebuild_scenes` (no AI calls).
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (46 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (49 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
@@ -127,6 +128,14 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 - **Sunlight study**: date + time, Mar/Jun/Sep/Dec presets, 24 h timeline with daylight band and play
   (sunrise to sunset loop), side-by-side synchronised comparison, **hours of sun lost** heatmap with worst spot
   and most affected lots (`GET /api/sunlight`).
+- **Block in 5 years** (third option of the Existing / With proposal toggle, `GET /api/block`): every active
+  OZ/SA application whose lot is inside the scene, one per lot, each in its own shade with storey lines and a
+  "55 storeys" chip; buildings on those lots today are hidden. Specs come from the Interpreter cache or are read
+  once (max 6 per request; refusals listed under "Not shown" with the reason). Massing reuses the Builder
+  Agent's plan if that proposal was built before, else the rule-based plan (labelled). Side panel: counts,
+  tallest, homes stated, colour-keyed list. Sunlight study has an "All nearby proposals" toggle for the
+  **combined** sun loss (`/api/sunlight?block=true`, cached as `sun_block_<set>_<date>`). Saved as
+  `block.json` in the scene folder (invalidated when the set of nearby applications changes).
 - Clear progress card: steps tick off; on a refusal it says where it stopped, marks skipped steps and offers
   other nearby proposals that can be shown in 3D.
 
@@ -173,7 +182,7 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 
 ## Ideas not built yet (ranked for a demo)
 
-1. **"Your block in 5 years"**: model all active nearby proposals at once, combined shadows.
+1. ~~"Your block in 5 years"~~ (built).
 2. **"View from my window"**: click a neighbouring building -> camera at its window + % of sky blocked.
 3. **Construction animation**: the proposal rises floor by floor on load.
 4. Scale comparisons (landmark ghost, "≈ 37 houses stacked").

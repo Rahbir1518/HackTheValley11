@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { GizmoHelper, GizmoViewport, Grid, Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { hasAncestor, isOnSite, isProposed, selectableAncestor } from "@/lib/scene";
+import type { BlockProposal } from "@/lib/api";
+import { blockColor, hasAncestor, isOnSite, isProposed, selectableAncestor } from "@/lib/scene";
 import type { Sun } from "@/lib/sun";
 
 export type Tool = "select" | "pan" | "orbit";
@@ -39,12 +40,23 @@ export interface ViewportProps {
   heatmap?: { url: string; extent: number } | null;
   annotation?: string | null;
   sync?: React.MutableRefObject<CameraSync>;
+  /** Other active proposals nearby, drawn together with this one ("your block in 5 years"). */
+  block?: BlockProposal[] | null;
+  selectedBlock?: string | null;
+  onSelectBlock?: (appNumber: string | null) => void;
 }
 
 const CANVAS = "#edf0ef";
 
 export default function Viewport(props: ViewportProps) {
   const night = !props.sun.up;
+  // The block view frames every proposal, in both halves of a split view alike.
+  const blockBounds = useMemo(() => {
+    if (!props.block?.length) return null;
+    const box = new THREE.Box3();
+    for (const p of props.block) for (const m of p.masses) for (const [x, y] of m.ring) box.expandByPoint(new THREE.Vector3(x, m.top, -y));
+    return box;
+  }, [props.block]);
   return (
     <Canvas
       shadows="percentage"
@@ -70,9 +82,12 @@ export default function Viewport(props: ViewportProps) {
       )}
       <Suspense fallback={null}>
         <Model {...props} />
+        {props.block && props.showProposal && (
+          <BlockMasses proposals={props.block} selected={props.selectedBlock ?? null} onSelect={props.tool === "select" ? props.onSelectBlock : undefined} />
+        )}
       </Suspense>
       {props.heatmap && <Heatmap {...props.heatmap} />}
-      <Controls id={props.id} tool={props.tool} focusToken={props.focusToken} sync={props.sync} />
+      <Controls id={props.id} tool={props.tool} focusToken={props.focusToken} sync={props.sync} extraBounds={blockBounds} />
       <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
         <GizmoViewport axisColors={["#727773", "#727773", "#566f87"]} labelColor="#ffffff" axisHeadScale={0.8} />
       </GizmoHelper>
@@ -124,7 +139,7 @@ function SunLight({ sun, shadows }: { sun: Sun; shadows: boolean }) {
 
 // ------------------------------------------------------------------ model
 
-function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoaded, layers, tool, annotation }: ViewportProps) {
+function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoaded, layers, tool, annotation, block }: ViewportProps) {
   const { scene: original } = useGLTF(glbUrl);
   // Each view gets its own copy so two canvases can show the same scene.
   const scene = useMemo(() => original.clone(true), [original]);
@@ -140,10 +155,13 @@ function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoade
     onLoaded?.(scene);
   }, [scene, onLoaded]);
 
+  // Buildings standing today on the other proposals' lots (block view only).
+  const replaced = useMemo(() => new Set(showProposal && block ? block.flatMap((p) => p.replaces) : []), [block, showProposal]);
+
   useEffect(() => {
     scene.traverse((o) => {
       if (o === scene) return;
-      let visible = !hidden.has(o.name);
+      let visible = !hidden.has(o.name) && !replaced.has(o.name);
       if (isProposed(o)) visible &&= showProposal;
       if (isOnSite(o)) visible &&= !showProposal;
       if (o.name === "Existing_Buildings") visible &&= layers.context;
@@ -151,7 +169,7 @@ function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoade
       if (o.name === "Parcels") visible &&= layers.lots;
       o.visible = visible;
     });
-  }, [scene, showProposal, hidden, layers]);
+  }, [scene, showProposal, hidden, layers, replaced]);
 
   const selected = useMemo(() => (selectedId ? scene.getObjectByName(selectedId) ?? null : null), [scene, selectedId]);
   const proposalTop = useMemo(() => {
@@ -181,6 +199,96 @@ function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoade
         </Html>
       )}
     </>
+  );
+}
+
+/** The other proposals in the block view: one flat shade each, storey lines, and a storey chip.
+ *  Rings are local metres (x east, y north); three.js is y-up with north = -z. */
+function BlockMasses({ proposals, selected, onSelect }: { proposals: BlockProposal[]; selected: string | null; onSelect?: (appNumber: string | null) => void }) {
+  const items = useMemo(
+    () =>
+      proposals.map((p, i) => {
+        const color = new THREE.Color(blockColor(i));
+        const material = new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0.02 });
+        const lineMat = new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(0.62), transparent: true, opacity: 0.75 });
+        const meshes: THREE.BufferGeometry[] = [];
+        const line: number[] = [];
+        let top = 0;
+        let label = new THREE.Vector3();
+        for (const m of p.masses) {
+          const shape = new THREE.Shape(m.ring.map(([x, y]) => new THREE.Vector2(x, y)));
+          const g = new THREE.ExtrudeGeometry(shape, { depth: m.top - m.z0, bevelEnabled: false });
+          g.rotateX(-Math.PI / 2); // (x, y, depth) -> (x, depth, -y)
+          g.translate(0, m.z0, 0);
+          meshes.push(g);
+          // Storey outlines and the top edge, like the floor lines on the viewed proposal.
+          const levels = m.storeys > 1 ? Array.from({ length: m.storeys - 1 }, (_, k) => m.z0 + ((k + 1) * (m.top - m.z0)) / m.storeys) : [];
+          for (const h of [...levels, m.top]) {
+            m.ring.forEach(([x, y], k) => {
+              const [x2, y2] = m.ring[(k + 1) % m.ring.length];
+              line.push(x, h + 0.05, -y, x2, h + 0.05, -y2);
+            });
+          }
+          if (m.top >= top) {
+            top = m.top;
+            const cx = m.ring.reduce((a, [x]) => a + x, 0) / m.ring.length;
+            const cy = m.ring.reduce((a, [, y]) => a + y, 0) / m.ring.length;
+            label = new THREE.Vector3(cx, top + 6, -cy);
+          }
+        }
+        const lines = new THREE.BufferGeometry();
+        lines.setAttribute("position", new THREE.Float32BufferAttribute(line, 3));
+        return { p, color: blockColor(i), material, lineMat, meshes, lines, label };
+      }),
+    [proposals],
+  );
+  // Labels mount a frame later: drei <Html> creates a React root, which must not happen inside
+  // the commit that creates this canvas (dev StrictMode re-runs effects and warns).
+  const [labels, setLabels] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setLabels(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  useEffect(
+    () => () =>
+      items.forEach((it) => {
+        it.meshes.forEach((g) => g.dispose());
+        it.lines.dispose();
+        it.material.dispose();
+        it.lineMat.dispose();
+      }),
+    [items],
+  );
+  return (
+    <group name="Block_Proposals">
+      {items.map((it) => (
+        <group
+          key={it.p.app_number}
+          name={`Block_${it.p.app_number}`}
+          onClick={(e) => {
+            if (!onSelect) return;
+            e.stopPropagation();
+            onSelect(it.p.app_number);
+          }}
+        >
+          {it.meshes.map((g, k) => (
+            <mesh key={k} geometry={g} material={it.material} castShadow receiveShadow />
+          ))}
+          <lineSegments geometry={it.lines} material={it.lineMat} />
+          {labels && (
+            <Html position={it.label} center zIndexRange={[20, 0]}>
+              <div
+                className={`pointer-events-none flex items-center gap-1.5 whitespace-nowrap rounded-md border bg-white px-2 py-1 text-[10px] text-ink shadow-sm ${selected === it.p.app_number ? "border-ink" : "border-line"}`}
+              >
+                <span className="size-[7px]" style={{ background: it.color }} />
+                {it.p.spec.storeys_stated ? "" : "≈"}
+                {it.p.spec.total_storeys} storeys
+              </div>
+            </Html>
+          )}
+        </group>
+      ))}
+    </group>
   );
 }
 
@@ -231,7 +339,19 @@ function SelectionOutline({ object }: { object: THREE.Object3D }) {
 
 // ------------------------------------------------------------------ camera
 
-function Controls({ id, tool, focusToken, sync }: { id: string; tool: Tool; focusToken: number; sync?: React.MutableRefObject<CameraSync> }) {
+function Controls({
+  id,
+  tool,
+  focusToken,
+  sync,
+  extraBounds,
+}: {
+  id: string;
+  tool: Tool;
+  focusToken: number;
+  sync?: React.MutableRefObject<CameraSync>;
+  extraBounds: THREE.Box3 | null;
+}) {
   const controls = useRef<OrbitControlsImpl>(null);
   const keys = useRef(new Set<string>());
   const seen = useRef(-1);
@@ -255,12 +375,13 @@ function Controls({ id, tool, focusToken, sync }: { id: string; tool: Tool; focu
     };
   }, []);
 
-  // Frame the proposal (or the lot) whenever asked.
+  // Frame the proposal (or the lot) whenever asked; in the block view, every proposal.
   useEffect(() => {
     const { scene, camera } = get();
     const target = scene.getObjectByName("Proposed_Building") ?? scene.getObjectByName("Lot");
     if (!target || !controls.current) return;
     const box = new THREE.Box3().setFromObject(target);
+    if (extraBounds) box.union(extraBounds);
     if (box.isEmpty()) return;
     const c = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
@@ -268,7 +389,7 @@ function Controls({ id, tool, focusToken, sync }: { id: string; tool: Tool; focu
     controls.current.target.set(c.x, size.y * 0.3, c.z);
     camera.position.set(c.x + r * 1.7, Math.max(size.y * 1.2, 70), c.z + r * 2.1);
     controls.current.update();
-  }, [focusToken, get]);
+  }, [focusToken, get]); // eslint-disable-line react-hooks/exhaustive-deps -- extraBounds is read when a new focus is requested
 
   // Side-by-side views: the view being dragged becomes the owner and publishes its camera.
   useEffect(() => {

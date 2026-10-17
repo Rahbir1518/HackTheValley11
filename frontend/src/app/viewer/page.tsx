@@ -10,6 +10,7 @@ import AppNav from "@/components/AppNav";
 import { Ordi, StatusChip } from "@/components/brand";
 import {
   AgentProgress,
+  BlockPanel,
   ProposalPanel,
   SceneCollection,
   type Section,
@@ -22,9 +23,9 @@ import {
   storeysLabel,
 } from "@/components/viewer/panels";
 import type { CameraSync, Layers, Tool } from "@/components/viewer/Viewport";
-import { API_URL, getSunlight, startRun, type RunResult, type StepEvent, type SunlightStudy } from "@/lib/api";
+import { API_URL, getBlock, getSunlight, startRun, type Block, type RunResult, type StepEvent, type SunlightStudy } from "@/lib/api";
 import { rememberPlace } from "@/lib/places";
-import { buildTree, findNode, type SceneNode } from "@/lib/scene";
+import { BLOCK_COLORS, buildTree, findNode, type SceneNode } from "@/lib/scene";
 import { minutesOfDayToronto, sunAt, sunTimes, torontoInstant } from "@/lib/sun";
 
 const Viewport = dynamic(() => import("@/components/viewer/Viewport"), { ssr: false });
@@ -121,14 +122,43 @@ function Viewer() {
     return () => clearInterval(id);
   }, [playing, date]);
 
+  // ---------------------------------------------------------------- your block in 5 years
+  const sceneKey = ok ? current!.scene_key ?? null : null;
+  const [blockOn, setBlockOn] = useState(false);
+  const [blockState, setBlockState] = useState<{ key: string; data?: Block; error?: string } | null>(null);
+  const [selectedBlock, setSelectedBlock] = useState<string | null>(null);
+  const blockReq = blockOn ? sceneKey : null;
+  useEffect(() => {
+    if (!blockReq) return;
+    let cancelled = false;
+    getBlock(blockReq)
+      .then((data) => {
+        if (cancelled) return;
+        setBlockState({ key: blockReq, data });
+        setFocusToken((v) => v + 1); // frame the whole cluster
+      })
+      .catch((e) => !cancelled && setBlockState({ key: blockReq, error: e instanceof Error ? e.message : String(e) }));
+    return () => {
+      cancelled = true;
+    };
+  }, [blockReq]);
+  const blockCurrent = blockState && blockState.key === sceneKey ? blockState : null;
+  const blockData = blockOn ? blockCurrent?.data ?? null : null;
+  const blockProposals = blockData?.proposals ?? null;
+  const showBlock = (on: boolean) => {
+    setBlockOn(on);
+    if (on) setShowProposal(true);
+    setSelectedBlock(null);
+    setFocusToken((v) => v + 1);
+  };
+
   const [heatOn, setHeatOn] = useState(false);
   const [heat, setHeat] = useState<{ key: string; study?: SunlightStudy; error?: string } | null>(null);
-  const sceneKey = ok ? current!.scene_key ?? null : null;
-  const heatKey = heatOn && sceneKey ? `${sceneKey}|${date}` : null;
+  const heatKey = heatOn && sceneKey && (!blockOn || blockData) ? `${sceneKey}|${date}|${blockData?.key ?? ""}` : null;
   useEffect(() => {
     if (!heatKey || !sceneKey) return;
     let cancelled = false;
-    getSunlight(sceneKey, date)
+    getSunlight(sceneKey, date, heatKey.split("|")[2] !== "")
       .then((study) => !cancelled && setHeat({ key: heatKey, study }))
       .catch((e) => !cancelled && setHeat({ key: heatKey, error: e instanceof Error ? e.message : String(e) }));
     return () => {
@@ -165,6 +195,8 @@ function Viewer() {
     layers,
     tool,
     focusToken,
+    selectedBlock,
+    onSelectBlock: setSelectedBlock,
   };
 
   const segmented = (options: [string, string][], value: string, onChange: (v: string) => void) => (
@@ -250,7 +282,21 @@ function Viewer() {
             <div className="absolute left-1/2 -translate-x-1/2">
               {sunlight
                 ? segmented([["single", "Single view"], ["split", "Split comparison"]], split ? "split" : "single", (v) => setSplit(v === "split"))
-                : segmented([["existing", "Existing"], ["with", "With proposal"]], showProposal ? "with" : "existing", (v) => setShowProposal(v === "with"))}
+                : segmented(
+                    [
+                      ["existing", "Existing"],
+                      ["with", "With proposal"],
+                      ["block", "Block in 5 years"],
+                    ],
+                    blockOn ? "block" : showProposal ? "with" : "existing",
+                    (v) => {
+                      if (v === "block") showBlock(true);
+                      else {
+                        if (blockOn) showBlock(false);
+                        setShowProposal(v === "with");
+                      }
+                    },
+                  )}
             </div>
             <div className="relative flex items-center gap-4">
               {ok && (
@@ -295,20 +341,21 @@ function Viewer() {
                 onLoaded={onLoaded}
                 heatmap={sunlight ? heatmap : null}
                 annotation={sunlight ? null : annotation}
+                block={blockProposals}
               />
             )}
             {glbUrl && splitView && (
               <div className="flex size-full">
                 <div className="relative flex-1 border-r-2 border-white">
-                  <Viewport {...common} id="a" showProposal={false} onLoaded={onLoaded} sync={sync} />
+                  <Viewport {...common} id="a" showProposal={false} onLoaded={onLoaded} sync={sync} block={blockProposals} />
                   <span className="absolute left-[76px] top-5 flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-[11px] text-muted">
                     <span className="size-2 bg-context" /> Without proposal
                   </span>
                 </div>
                 <div className="relative flex-1">
-                  <Viewport {...common} id="b" showProposal heatmap={heatmap} sync={sync} />
+                  <Viewport {...common} id="b" showProposal heatmap={heatmap} sync={sync} block={blockProposals} />
                   <span className="absolute left-5 top-5 flex items-center gap-2 rounded-md bg-white px-3 py-1.5 text-[11px] text-prop-ink">
-                    <span className="size-2 bg-prop-ink" /> With proposal
+                    <span className="size-2 bg-prop-ink" /> {blockProposals ? "With all nearby proposals" : "With proposal"}
                   </span>
                 </div>
               </div>
@@ -332,7 +379,7 @@ function Viewer() {
                 </div>
                 {!splitView && (
                   <div className="pointer-events-none absolute left-[76px] top-[22px] space-y-1.5">
-                    <p className="mono text-[10px] text-muted">{sunlight ? "SUNLIGHT STUDY" : showProposal ? "WITH PROPOSAL" : "EXISTING CITY CONTEXT"}</p>
+                    <p className="mono text-[10px] text-muted">{sunlight ? "SUNLIGHT STUDY" : blockOn ? "YOUR BLOCK IN 5 YEARS · IF ALL ARE BUILT" : showProposal ? "WITH PROPOSAL" : "EXISTING CITY CONTEXT"}</p>
                     <p className="text-[11px] text-prop-ink">
                       {current?.geocode?.address_full ?? address} / {selected ? selected.name : "Nothing selected"}
                     </p>
@@ -342,6 +389,16 @@ function Viewer() {
                   <span className="flex items-center gap-[7px]">
                     <span className="size-[9px] bg-prop" /> Proposal
                   </span>
+                  {blockProposals && (
+                    <span className="flex items-center gap-[7px]">
+                      <span className="flex">
+                        {BLOCK_COLORS.slice(0, Math.min(3, blockProposals.length)).map((c) => (
+                          <span key={c} className="size-[9px]" style={{ background: c }} />
+                        ))}
+                      </span>
+                      Other proposals
+                    </span>
+                  )}
                   <span className="flex items-center gap-[7px]">
                     <span className="size-[9px] bg-context" /> City context
                   </span>
@@ -461,6 +518,9 @@ function Viewer() {
               studyLoading={heatOn && !heatCurrent}
               studyError={heatCurrent?.error ?? null}
               onBack={() => setMode("explore")}
+              blockOn={blockOn}
+              onBlock={showBlock}
+              blockCount={blockData ? blockData.proposals.length + 1 : null}
               sceneOpen={
                 <button onClick={() => setMode("explore")} className="flex w-full items-center justify-between border-b border-line pb-4 text-[11px] text-muted">
                   ›  Scene collection
@@ -490,7 +550,21 @@ function Viewer() {
               )}
               <div className="space-y-4 p-5">
                 <SelectedObject node={selected} />
-                {current?.ok ? (
+                {current?.ok && blockOn ? (
+                  <BlockPanel
+                    result={current}
+                    block={blockData}
+                    loading={!blockCurrent}
+                    error={blockCurrent?.error ?? null}
+                    selected={selectedBlock}
+                    onSelect={setSelectedBlock}
+                    onSunlight={() => {
+                      setMode("sunlight");
+                      setHeatOn(true);
+                    }}
+                    onBack={() => showBlock(false)}
+                  />
+                ) : current?.ok ? (
                   <ProposalPanel result={current} section={section} onSection={setSection} onOpenImagery={() => setImageryOpen(true)} />
                 ) : current?.application ? (
                   // Not modelled, but the application itself is still worth reading.

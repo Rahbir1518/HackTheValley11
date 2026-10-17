@@ -7,6 +7,8 @@ GET /api/applications      geocode + nearby applications (for picking one)
 GET /api/run               Server-Sent Events: one `event` per agent step, then `result`
                            (saved runs are replayed instantly; fresh=true forces a new run)
 GET /api/cached            addresses with a saved run, for the demo picker
+GET /api/block             every active nearby proposal placed in a built scene ("your block in 5 years")
+GET /api/sunlight          hours of sun lost for a scene and day (block=true: all proposals combined)
 GET /api/ward              application counts for a ward
 GET /api/sources           dataset links and refresh dates
 GET /files/scenes/...      built .glb / preview .png
@@ -148,25 +150,37 @@ def housing(app_number: str):
     return ctx
 
 
-@app.get("/api/sunlight")
-def sunlight_study(scene_key: str, date: str):
-    """Hours of ground-level direct sun lost/gained for a built scene on one day (cached)."""
-    import datetime as dt
-
-    from . import sunlight
-
+def _scene_dir(scene_key: str):
     scenes = (orchestrator.CACHE / "scenes").resolve()
     scene_dir = (scenes / scene_key).resolve()
     if scene_dir.parent != scenes or not (scene_dir / "plan.json").exists():
         raise HTTPException(404, "unknown scene")
+    return scene_dir
+
+
+def sunlight_result(scene_key: str, date: str, block: bool = False) -> dict:
+    """Hours of sun lost for a scene and day (cached), with the most affected lots named.
+    `block` = all active nearby proposals together (needs /api/block to have run)."""
+    import datetime as dt
+
+    from . import sunlight
+
+    scene_dir = _scene_dir(scene_key)
     try:
         day = dt.date.fromisoformat(date)
     except ValueError:
         raise HTTPException(400, "date must be YYYY-MM-DD")
+    block_data = None
+    if block:
+        f = scene_dir / "block.json"
+        if not f.exists():
+            raise HTTPException(409, "load the block view first")
+        block_data = json.loads(f.read_text())
     try:
-        res = sunlight.run(scene_dir, day)
+        res = sunlight.run(scene_dir, day, block_data)
     except ValueError as e:
         raise HTTPException(422, str(e))
+    name = sunlight.study_name(day, block_data)
 
     # Name the most affected lots with the nearest City address point.
     if res["affected_parcels"] and "named" not in res:
@@ -182,8 +196,26 @@ def sunlight_study(scene_key: str, date: str):
             if near is not None and ((near["x"] - px) ** 2 + (near["y"] - py) ** 2) ** 0.5 < 60:
                 p["address"] = near["address_full"]
         res["named"] = True
-        (scene_dir / f"sun_{day.isoformat()}.json").write_text(json.dumps({k: v for k, v in res.items() if k != "cached"}))
-    return res | {"png_url": f"/files/scenes/{scene_key}/sun_{day.isoformat()}.png"}
+        (scene_dir / f"{name}.json").write_text(json.dumps({k: v for k, v in res.items() if k != "cached"}))
+    return res | {"png_url": f"/files/scenes/{scene_key}/{name}.png"}
+
+
+@app.get("/api/sunlight")
+def sunlight_study(scene_key: str, date: str, block: bool = False):
+    """Hours of ground-level direct sun lost/gained for a built scene on one day (cached)."""
+    return sunlight_result(scene_key, date, block)
+
+
+@app.get("/api/block")
+async def block_view(scene_key: str, fresh: bool = False):
+    """Your block in 5 years: every active nearby proposal placed in this scene (cached).
+    The first visit may read uncached applications with the Interpreter Agent."""
+    from . import block
+
+    try:
+        return await block.build(_scene_dir(scene_key), fresh=fresh)
+    except store.DataError as e:
+        raise HTTPException(404, str(e))
 
 
 class ChatRequest(BaseModel):

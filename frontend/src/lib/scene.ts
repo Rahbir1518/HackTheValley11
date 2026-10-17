@@ -64,3 +64,7 @@ export function findNode(nodes: SceneNode[], id: string | null): SceneNode | nul
   }
   return null;
 }
+
+/** Shades for the other proposals in the block view (the viewed proposal keeps its blue). */
+export const BLOCK_COLORS = ["#D9A066", "#8FB585", "#C38DB4", "#DE8B76", "#74AFA9", "#A99BD8", "#C9B26A", "#8AA0C9"];
+export const blockColor = (i: number) => BLOCK_COLORS[i % BLOCK_COLORS.length];
