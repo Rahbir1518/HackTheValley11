@@ -65,6 +65,9 @@ export function formatToronto(d: Date) {
 }
 
 export function minutesOfDayToronto(d: Date) {
-  const [h, m] = formatToronto(d).split(":").map(Number);
-  return h * 60 + m;
+  // Explicit 24-hour clock: en-CA formats as "06:30 p.m." by default, which would not parse.
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    .formatToParts(d);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return get("hour") * 60 + get("minute");
 }

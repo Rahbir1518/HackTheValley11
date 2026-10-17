@@ -207,28 +207,34 @@ export function ProposalPanel({
   const spec = result.spec;
   const app = result.application;
   const n = result.narration;
-  if (section === "nearby" || section === "involved") {
-    const titles = { nearby: "Nearby & ward context", involved: "Get involved" };
+  if (section === "nearby") {
     return (
       <div className="space-y-4">
         <button onClick={() => onSection("overview")} className="text-[12px] text-prop-ink">
           ← Back to proposal overview
         </button>
-        <p className="text-[18px] text-black">{titles[section]}</p>
-        {section === "nearby" && <NearbyContext result={result} />}
-        {section === "involved" && app && <Involved appNumber={app.app_number} />}
+        <p className="text-[18px] text-black">Nearby &amp; ward context</p>
+        <NearbyContext result={result} />
       </div>
     );
   }
   return (
     <div className="space-y-4">
-      <div className="flex gap-6 text-[12px]">
-        {(["overview", "evidence"] as const).map((s) => (
+      <div className="flex gap-5 text-[12px]">
+        {(
+          [
+            ["overview", "Overview"],
+            ["evidence", "Evidence & sources"],
+            ["involved", "Get involved"],
+          ] as const
+        ).map(([s, label]) => (
           <button key={s} onClick={() => onSection(s)} className={section === s ? "font-semibold text-ink" : "text-muted hover:text-ink"}>
-            {s === "overview" ? "Overview" : "Evidence & sources"}
+            {label}
           </button>
         ))}
       </div>
+
+      {section === "involved" && app && <Involved appNumber={app.app_number} />}
 
       {section === "overview" && spec && (
         <>
@@ -800,7 +806,7 @@ export function SunTimeline({
   const { sunrise, sunset } = sunTimes(date);
   const rise = minutesOfDayToronto(sunrise);
   const set = minutesOfDayToronto(sunset);
-  const pct = (minutes / 1440) * 100;
+  const pct = (Math.min(1435, Math.max(0, minutes)) / 1440) * 100;
   return (
     <div className="shrink-0 space-y-5 border-t border-line bg-white px-7 py-4">
       <div className="flex items-center justify-between">

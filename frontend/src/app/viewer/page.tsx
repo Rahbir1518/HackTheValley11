@@ -107,7 +107,7 @@ function Viewer() {
     const { sunrise, sunset } = sunTimes(date);
     const rise = minutesOfDayToronto(sunrise);
     const set = minutesOfDayToronto(sunset);
-    const id = setInterval(() => setMinutes((m) => (m + 4 > set ? rise : m + 4)), 50);
+    const id = setInterval(() => setMinutes((m) => (m + 4 > set || m < rise ? rise : m + 4)), 50);
     return () => clearInterval(id);
   }, [playing, date]);
 
