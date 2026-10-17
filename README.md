@@ -89,7 +89,9 @@ npm install
 npm run dev                     # http://localhost:3000
 ```
 
-The landing page is public; `/viewer` requires Clerk sign-in. For local testing without Clerk, put
+The landing page (`/`) is public: a full-screen line-drawing video scrubbed by scroll (re-encoded with a
+keyframe on every frame so seeking is smooth) walks through the five phases, followed by the open data used,
+the design principles and a call to action. `/viewer` requires Clerk sign-in (`/sign-in`). For local testing without Clerk, put
 `ORDIS_DISABLE_AUTH=true` in `frontend/.env.local` (ignored in production builds).
 
 ### The viewer
