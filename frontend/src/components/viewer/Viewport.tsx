@@ -163,6 +163,19 @@ function setUnderConstruction(materials: THREE.Material[], on: boolean) {
   }
 }
 
+/** True from the frame after mount. drei <Html> creates its own React root, which must not
+ *  happen inside the commit that creates the canvas: when the model is already in memory
+ *  (e.g. back from another page) nothing suspends, and dev StrictMode warns about unmounting a
+ *  root mid-render. Every <Html> label waits for this. */
+function useAfterFirstFrame() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return ready;
+}
+
 /** Seconds for n storeys to rise, one at a time. */
 const riseSeconds = (n: number) => Math.min(4.2, Math.max(1.8, n * 0.065));
 
@@ -183,6 +196,8 @@ function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoade
     });
     return copy;
   }, [original]);
+
+  const htmlReady = useAfterFirstFrame();
 
   // ---- floor-by-floor rise: a clipping plane steps up one storey at a time
   const build = useRef<{ clip: THREE.Plane; materials: THREE.Material[]; roof: number; top: number } | null>(null);
@@ -303,7 +318,7 @@ function Model({ id, glbUrl, showProposal, hidden, selectedId, onSelect, onLoade
     <>
       <primitive object={scene} onClick={click} />
       {selected && <SelectionOutline object={selected} key={`${id}-${selected.name}`} />}
-      {annotation && showProposal && proposalTop && (
+      {annotation && showProposal && proposalTop && htmlReady && (
         <group position={proposalTop}>
           {/* Moves with the rising storeys during the construction animation. */}
           <group ref={labelGroup}>
@@ -363,10 +378,9 @@ function BlockMasses({ proposals, selected, onSelect }: { proposals: BlockPropos
       }),
     [proposals],
   );
-  // They rise floor by floor when they appear; storey chips show once they have topped out
-  // (which also keeps drei <Html> from creating its React root inside the commit that
-  // creates this canvas, where dev StrictMode warns).
+  // They rise floor by floor when they appear; storey chips show once they have topped out.
   const [labels, setLabels] = useState(false);
+  const htmlReady = useAfterFirstFrame();
   const anim = useRef<{ t0: number; seconds: number; rig: { plane: THREE.Plane; top: number; storeys: number }[]; materials: THREE.Material[] } | null>(null);
   useLayoutEffect(() => {
     if (prefersReducedMotion()) {
@@ -415,7 +429,7 @@ function BlockMasses({ proposals, selected, onSelect }: { proposals: BlockPropos
             <mesh key={k} geometry={g} material={it.material} castShadow receiveShadow />
           ))}
           <lineSegments geometry={it.lines} material={it.lineMat} />
-          {labels && (
+          {labels && htmlReady && (
             <Html position={it.label} center zIndexRange={[20, 0]}>
               <div
                 className={`pointer-events-none flex items-center gap-1.5 whitespace-nowrap rounded-md border bg-white px-2 py-1 text-[10px] text-ink shadow-sm ${selected === it.p.app_number ? "border-ink" : "border-line"}`}
