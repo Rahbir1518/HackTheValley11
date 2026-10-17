@@ -4,7 +4,7 @@ from typing import Awaitable, Callable, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from .providers import LLMError, LLMProvider
+from .providers import LLMConfigError, LLMError, LLMProvider
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -36,7 +36,7 @@ async def ask_model(
                 await on_attempt(i + 1, raw, None)
             return result
         except (ValidationError, ValueError, LLMError) as e:
-            if isinstance(e, LLMError) and "API key missing" in str(e):
+            if isinstance(e, LLMConfigError):
                 raise
             last_error = str(e)[:1500]
             if on_attempt:

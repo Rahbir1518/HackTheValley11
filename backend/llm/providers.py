@@ -16,12 +16,16 @@ class LLMError(RuntimeError):
     pass
 
 
+class LLMConfigError(LLMError):
+    """Bad key, unknown model, etc. Retrying won't help, so callers stop immediately."""
+
+
 class LLMProvider:
     name = "base"
 
     def __init__(self, api_key: str, model: str):
         if not api_key:
-            raise LLMError(f"{self.name}: API key missing (set it in .env)")
+            raise LLMConfigError(f"{self.name}: API key missing (set it in .env)")
         self.api_key, self.model = api_key, model
 
     async def _post(self, url: str, payload: dict, headers: dict) -> dict:
@@ -45,6 +49,8 @@ class LLMProvider:
                 await asyncio.sleep(min(wait, 60) + random.uniform(0, 0.5))
                 delay *= 2
                 continue
+            if r.status_code in (401, 403, 404):
+                raise LLMConfigError(f"{self.name} ({self.model}): HTTP {r.status_code}: {r.text[:500]}")
             if r.status_code >= 400:
                 raise LLMError(f"{self.name}: HTTP {r.status_code}: {r.text[:500]}")
             return r.json()
@@ -117,7 +123,7 @@ class OpenRouterProvider(OpenAICompatibleProvider):
 
 
 PROVIDERS = {
-    "gemini": (GeminiProvider, "GEMINI_API_KEY", "GEMINI_MODEL", "gemini-2.5-flash"),
+    "gemini": (GeminiProvider, "GEMINI_API_KEY", "GEMINI_MODEL", "gemini-3.8-flash"),
     "groq": (GroqProvider, "GROQ_API_KEY", "GROQ_MODEL", "llama-3.3-70b-versatile"),
     "openrouter": (OpenRouterProvider, "OPENROUTER_API_KEY", "OPENROUTER_MODEL",
                    "meta-llama/llama-3.3-70b-instruct:free"),
