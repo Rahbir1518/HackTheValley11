@@ -183,7 +183,7 @@ def load_dev_apps(db, path: Path) -> None:
             street = " ".join(filter(None, [r["STREET_NAME"], r["STREET_TYPE"], r["STREET_DIRECTION"]]))
             rid = int(r["_id"])
             db.execute(
-                "INSERT INTO dev_apps VALUES (" + ",".join("?" * 25) + ")",
+                "INSERT INTO dev_apps VALUES (" + ",".join("?" * 28) + ")",
                 (
                     rid, r["APPLICATION#"], r["APPLICATION_TYPE"], blank_to_none(r["STREET_NUM"]),
                     blank_to_none(r["STREET_NAME"]), blank_to_none(r["STREET_TYPE"]),
@@ -193,7 +193,8 @@ def load_dev_apps(db, path: Path) -> None:
                     blank_to_none(r["WARD_NUMBER"]), blank_to_none(r["WARD_NAME"]),
                     blank_to_none(r["COMMUNITY_MEETING_DATE"]), blank_to_none(r["COMMUNITY_MEETING_TIME"]),
                     blank_to_none(r["COMMUNITY_MEETING_LOCATION"]), blank_to_none(r["APPLICATION_URL"]),
-                    blank_to_none(r["PARENT_FOLDER_NUMBER"]), x, y, lon, lat,
+                    blank_to_none(r["CONTACT_NAME"]), blank_to_none(r["CONTACT_PHONE"]),
+                    blank_to_none(r["CONTACT_EMAIL"]), blank_to_none(r["PARENT_FOLDER_NUMBER"]), x, y, lon, lat,
                 ),
             )
             if x is not None:

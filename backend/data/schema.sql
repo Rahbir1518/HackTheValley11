@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS dev_apps (
     meeting_time TEXT,
     meeting_location TEXT,
     application_url TEXT,
+    contact_name TEXT,                -- City planner on the file
+    contact_phone TEXT,
+    contact_email TEXT,
     parent_folder TEXT,
     x REAL, y REAL,                   -- EPSG:2952
     lon REAL, lat REAL

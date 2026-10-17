@@ -73,6 +73,40 @@ def _sse(event: str, data) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+@app.get("/api/involved")
+def involved(app_number: str):
+    """How a resident can take part: community meetings (this and related applications),
+    the City planner on the file, and the official record."""
+    import datetime as dt
+
+    from .agents.data_agent import related_applications
+
+    db = store.connect()
+    try:
+        app_ = store.get_application(db, app_number)
+    except store.DataError as e:
+        raise HTTPException(404, str(e))
+    today = dt.date.today().isoformat()
+    meetings = {}
+    for a in [app_] + related_applications(db, app_, limit=10):
+        if a.get("meeting_date"):
+            key = (a["meeting_date"][:10], a.get("meeting_time"))
+            meetings.setdefault(key, {"date": a["meeting_date"][:10], "time": a.get("meeting_time"),
+                                      "location": a.get("meeting_location"), "app_number": a["app_number"]})
+    ordered = sorted(meetings.values(), key=lambda m: m["date"])
+    return {
+        "app_number": app_["app_number"],
+        "address": app_["address"],
+        "status": app_["status"],
+        "ward_name": app_["ward_name"],
+        "application_url": app_["application_url"],
+        "planner": {"name": app_["contact_name"], "phone": app_["contact_phone"], "email": app_["contact_email"]},
+        "upcoming_meetings": [m for m in ordered if m["date"] >= today],
+        "past_meetings": [m for m in ordered if m["date"] < today][-3:],
+        "today": today,
+    }
+
+
 @app.get("/api/cached")
 def cached():
     """Addresses with a saved run (instant replay), newest first."""
