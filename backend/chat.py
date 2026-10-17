@@ -72,8 +72,17 @@ def looks_like_address(text: str) -> str | None:
 
 
 def _featured(address_full: str) -> dict | None:
-    """The saved run for this address, if any: its summary and key facts."""
-    for c in orchestrator.cached_runs():
+    """The saved run for this address, if any: its summary and key facts. A run whose proposal
+    is at this very address comes first (an address can have several saved runs, e.g. one where
+    the Data Agent picked a proposal down the street)."""
+    runs = [c for c in orchestrator.cached_runs() if c["address"] == address_full and not c["include_closed"]]
+    here = address_full.upper()
+
+    def at_address(c) -> bool:
+        saved = json.loads((orchestrator.RUNS / f"{c['key']}.json").read_text())["result"]
+        return ((saved.get("application") or {}).get("address") or "").upper() == here
+
+    for c in sorted(runs, key=lambda c: not at_address(c)):  # stable: newest first within each group
         if c["address"] != address_full or c["include_closed"]:
             continue
         saved = json.loads((orchestrator.RUNS / f"{c['key']}.json").read_text())["result"]
