@@ -81,7 +81,7 @@ cd frontend; npm run dev                                               # http://
 - Reload some datasets in place: `backend\.venv\Scripts\python scripts\ingest.py --only heritage rentals`
   (keys: dev_apps parcels address_points massing trees neighbourhoods profiles heritage rentals green_spaces
   schools transit; add `--refresh` to re-download). New columns on old databases are added by `MIGRATIONS`.
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (63 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (65 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
@@ -186,13 +186,19 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   runs saved before `infill.VERSION` re-run once from caches (no AI calls). 240 Wellesley St E is the example.
 - **From the street** (view switch next to "Perspective", `GET /api/street?scene_key=&view=&turn=`): a Google
   Street View photo facing the site with the 3D proposal drawn on top from the same camera (approximate
-  photomontage, labelled; photo date + (c) Google). Free metadata lookups at the site and 45 m N/E/S/W give up to
-  4 viewpoints (whole building in frame first, then nearest); `streetview.frame` aims heading/pitch/fov at the
+  photomontage, labelled; photo date + (c) Google). Free metadata lookups (site centre + 8 directions at 30 m and
+  60 m) give up to 4 viewpoints. **Only Google's own imagery** (credit exactly "(c) Google"): user photospheres
+  ("CAoS..." IDs, credited to people or third-party tours) have unreliable position/height/heading and misalign.
+  Order: whole building in frame, then not closer than 35 m, then nearest, from different sides (60 deg apart);
+  cropped close-ups only when fewer than two whole-building views exist. `streetview.frame` aims heading/pitch/fov at the
   proposal from the panorama's position (camera 2.5 m up). Photos (640x400) are fetched once with the
   server-side key and cached in `scenes/<key>/street/`; the browser never sees the key. Existing / With /
   Block apply (existing City buildings are drawn depth-only so they hide what's behind them). Turn +/-20 deg.
   The briefing PDF composites photo + 3D. Pre-cache demo photos: `python -m backend.warm --street`.
-  Without a key the view says what to set.
+  Without a key the view says what to set. The overlay uses fixed soft daylight (not the study clock).
+  Known limit: buildings missing from the City's 3D data (or photos older than the data) can't hide the
+  proposal, so it may be drawn over them; the caption shows the photo date. Bump `streetview.VERSION` to
+  rebuild viewpoint lists (cached photos are reused).
 - Clear progress card: steps tick off; on a refusal it says where it stopped, marks skipped steps and offers
   other nearby proposals that can be shown in 3D.
 
