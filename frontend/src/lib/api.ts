@@ -127,6 +127,32 @@ export async function getSunlight(sceneKey: string, date: string, block = false)
   return data;
 }
 
+/** Parks, transit and schools within a walk, today and with the proposal(s) (GET /api/capacity). */
+export interface Capacity {
+  radius_m: number;
+  residents_today: number;
+  neighbourhoods: string[];
+  new_residents: number;
+  proposals_counted: { app_number: string; address: string; units: number; household_size: number; residents: number }[];
+  proposals_not_counted: { app_number: string; address: string }[];
+  parks: {
+    area_m2: number;
+    largest: { name: string; area_m2: number }[];
+    per_resident_today: number | null;
+    per_resident_with: number | null;
+    city_per_resident: number | null;
+    rule: string;
+  };
+  transit: {
+    stops_within_walk: number;
+    station: { name: string; distance_m: number; mode: string; lines: string[] } | null;
+    routes: Record<string, string[]>;
+  };
+  schools: { count: number; by_type: Record<string, number>; nearest: { name: string; type: string | null; distance_m: number }[]; note: string };
+  rules: string[];
+  block: boolean;
+}
+
 export interface HeritageEntry {
   address: string;
   status: string;

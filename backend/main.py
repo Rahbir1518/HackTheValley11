@@ -154,6 +154,37 @@ def site(app_number: str):
         raise HTTPException(404, str(e))
 
 
+def capacity_result(scene_key: str, block: bool = False) -> dict:
+    """Parks, transit and schools within a walk of the site, today and with the proposal(s)."""
+    from . import capacity
+
+    scene_dir = _scene_dir(scene_key)
+    db = store.connect()
+    plan = json.loads((scene_dir / "plan.json").read_text())
+    app_ = store.get_application(db, plan["metadata"]["application_id"])
+    site_ = store.find_lot(db, app_)
+    ox, oy = site_.origin
+    spec = _cached_spec(db, app_) or {}
+    proposals = [{"app_number": app_["app_number"], "address": app_["address"], "units": spec.get("units"),
+                  "x": ox, "y": oy}]
+    if block:
+        f = scene_dir / "block.json"
+        if not f.exists():
+            raise HTTPException(409, "load the block view first")
+        for p in json.loads(f.read_text())["proposals"]:
+            ring = p["masses"][0]["ring"]  # local metres; its centre locates the household size
+            cx, cy = sum(x for x, _ in ring) / len(ring), sum(y for _, y in ring) / len(ring)
+            proposals.append({"app_number": p["app_number"], "address": p["address"], "units": p["spec"]["units"],
+                              "x": ox + cx, "y": oy + cy})
+    return capacity.analyse(db, (ox, oy), proposals) | {"block": block}
+
+
+@app.get("/api/capacity")
+def capacity_view(scene_key: str, block: bool = False):
+    """Can the neighbourhood absorb it? Estimates are labelled with their rules."""
+    return capacity_result(scene_key, block)
+
+
 @app.get("/api/housing")
 def housing(app_number: str):
     """Housing context for the application's neighbourhood (2021 Census, 158 neighbourhoods)."""
@@ -269,6 +300,7 @@ def briefing(req: BriefingRequest):
         "narration": json.loads(narration_file.read_text()) if narration_file.exists() else None,
         "involved": involvement(db, app_),
         "site": site_facts.for_application(db, app_),
+        "capacity": capacity_result(req.scene_key, block=block is not None),
         "sunlight": sunlight_result(req.scene_key, req.date),
         "block": block,
         "block_sunlight": sunlight_result(req.scene_key, req.date, block=True) if block else None,

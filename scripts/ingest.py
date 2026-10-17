@@ -456,8 +456,9 @@ def load_transit(db, zip_path: Path) -> None:
                 continue
             x, y = t.transform(lon, lat)
             modes = sorted({m for m, _ in serving})
-            names = sorted({n for _, n in serving}, key=lambda n: (len(n), n))
-            rows.append((len(rows), s["stop_id"], s["stop_name"], ",".join(modes), ",".join(names), x, y))
+            pairs = sorted({(n, m) for m, n in serving}, key=lambda p: (len(p[0]), p))
+            rows.append((len(rows), s["stop_id"], s["stop_name"], ",".join(modes),
+                         ",".join(f"{n}|{m}" for n, m in pairs), x, y))
     db.executemany("INSERT INTO transit_stops VALUES (?,?,?,?,?,?,?)", rows)
     db.executemany("INSERT INTO transit_stops_idx VALUES (?,?,?,?,?)", ((r[0], r[5], r[5], r[6], r[6]) for r in rows))
     print(f"  transit_stops: {len(rows)} rows")

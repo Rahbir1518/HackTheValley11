@@ -320,6 +320,35 @@ def render(facts: dict, snapshot: bytes | None, today: dt.date | None = None) ->
         story += _section(st, f"Sunlight on {_day(sun['date'])} (clear sky, ground level)", body)
         story.append(Spacer(1, 12))
 
+    # ---- neighbourhood capacity
+    cap = facts.get("capacity")
+    if cap:
+        col_w = (WIDTH - 2 * 0.22 * inch) / 3
+        p, t, sc = cap["parks"], cap["transit"], cap["schools"]
+        parks = [Paragraph(st.text(f"Park space per resident: {p['per_resident_today']} m² today"
+                                   + (f" → {p['per_resident_with']} m² with ≈{cap['new_residents']:,} new residents"
+                                      if cap["new_residents"] else "") + "."), st.cell)]
+        if p.get("city_per_resident"):
+            parks.append(Paragraph(st.text(f"Toronto overall: {p['city_per_resident']} m² per resident."), st.small))
+        if cap["new_residents"]:
+            parks.append(Paragraph(st.text("New residents = homes stated × average household size (estimate)."),
+                                   st.small))
+        if t["station"]:
+            s = t["station"]
+            transit = [Paragraph(st.text(f"{s['name']} ({'LRT' if s['mode'] == 'lrt' else 'subway'} Line "
+                                         f"{', '.join(s['lines'])}), {s['distance_m']} m."), st.cell)]
+        else:
+            transit = [Paragraph(st.text("No subway or LRT station within 1.5 km."), st.cell)]
+        for mode, routes in t["routes"].items():
+            transit.append(Paragraph(st.text(f"{mode.capitalize()}: {', '.join(routes)}"), st.cell))
+        schools = [Paragraph(st.text(f"{sc['count']} schools within 1 km"
+                                     + (f"; nearest {sc['nearest'][0]['name']} ({sc['nearest'][0]['distance_m']} m)."
+                                        if sc["nearest"] else ".")), st.cell),
+                   Paragraph(st.text("Enrolment and capacity are not in open data."), st.small)]
+        story += _section(st, f"Within a {cap['radius_m']} m walk (about {cap['residents_today']:,.0f} residents today, estimate)",
+                          [_columns([parks, transit, schools], [col_w] * 3)])
+        story.append(Spacer(1, 12))
+
     # ---- take part
     col_w = (WIDTH - 2 * 0.22 * inch) / 3
     if inv["upcoming_meetings"]:
@@ -343,7 +372,7 @@ def render(facts: dict, snapshot: bytes | None, today: dt.date | None = None) ->
                         _section(st, "Official record", record)], [col_w] * 3), Spacer(1, 12)]
 
     # ---- footer
-    sources = ", ".join(s["title"] for s in facts.get("sources", [])[:6])
+    sources = ", ".join(s["title"] for s in facts.get("sources", []))
     footer = [Paragraph(st.text(
         "Ordis explains; it does not take a position for or against this proposal. “Stated” means it appears in "
         "the City's application record; “estimated” means Ordis filled a gap with a documented rule."), st.foot),

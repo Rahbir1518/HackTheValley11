@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS transit_stops (
     stop_id TEXT,
     name TEXT,
     modes TEXT,                       -- comma list: subway, lrt, streetcar, bus
-    routes TEXT,                      -- comma list of route numbers
+    routes TEXT,                      -- comma list of number|mode, e.g. 504|streetcar,29|bus
     x REAL, y REAL
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS transit_stops_idx USING rtree(id, minx, maxx, miny, maxy);

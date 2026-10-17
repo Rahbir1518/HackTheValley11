@@ -18,7 +18,7 @@ import {
   Play,
   Sun as SunIcon,
 } from "lucide-react";
-import { API_URL, type Agent, type Block, type RunResult, type SiteFacts, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
+import { API_URL, type Agent, type Block, type Capacity, type RunResult, type SiteFacts, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
 import { blockColor, type SceneNode } from "@/lib/scene";
 import { formatToronto, minutesOfDayToronto, sunTimes, type Sun } from "@/lib/sun";
 import { Ordi, StatusChip } from "@/components/brand";
@@ -191,7 +191,7 @@ export function SelectedObject({ node }: { node: SceneNode | null }) {
 
 // ------------------------------------------------------------------ overview / evidence
 
-export type Section = "overview" | "evidence" | "nearby" | "involved";
+export type Section = "overview" | "evidence" | "nearby" | "involved" | "capacity";
 
 export function ProposalPanel({
   result,
@@ -215,6 +215,17 @@ export function ProposalPanel({
         </button>
         <p className="text-[18px] text-black">Nearby &amp; ward context</p>
         <NearbyContext result={result} />
+      </div>
+    );
+  }
+  if (section === "capacity" && result.scene_key) {
+    return (
+      <div className="space-y-4">
+        <button onClick={() => onSection("overview")} className="text-[12px] text-prop-ink">
+          ← Back to proposal overview
+        </button>
+        <p className="text-[18px] text-black">Can the neighbourhood absorb it?</p>
+        <CapacityDetails sceneKey={result.scene_key} />
       </div>
     );
   }
@@ -280,6 +291,7 @@ export function ProposalPanel({
             {(
               [
                 ["evidence", "Evidence & assumptions", "Application text and model rules"],
+                ["capacity", "Neighbourhood capacity", "Parks, transit and schools within a walk"],
                 ["nearby", "Nearby & ward context", "Applications, housing and your ward"],
                 ["imagery", "Site imagery", "Aerial photo and Street View, in a window"],
                 ["involved", "Get involved", "How to participate in the process"],
@@ -353,6 +365,118 @@ export function ProposalPanel({
         </div>
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ neighbourhood capacity
+
+const MODE_LABEL: Record<string, string> = { subway: "Subway", lrt: "LRT", streetcar: "Streetcar", bus: "Bus" };
+
+function metres(m: number) {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+}
+
+/** Parks per resident before/after, transit and schools within a walk. Counts of mapped things
+ *  are facts; resident numbers are estimates and say so. */
+function CapacityDetails({ sceneKey, block = false }: { sceneKey: string; block?: boolean }) {
+  const res = useFetch<Capacity>(`${API_URL}/api/capacity?scene_key=${encodeURIComponent(sceneKey)}${block ? "&block=true" : ""}`);
+  const [why, setWhy] = useState(false);
+  const c = res?.data;
+  if (!c) return <p className="text-[11px] text-muted">{res?.error ?? "Measuring the neighbourhood…"}</p>;
+  const p = c.parks;
+  const t = c.transit;
+  return (
+    <div className="space-y-5 text-[11px]">
+      <p className="text-[12px] leading-[1.6] text-muted">
+        Within a {c.radius_m} m walk of the site: about {c.residents_today.toLocaleString()} residents today (estimate).
+      </p>
+
+      <div className="space-y-2">
+        <p className={`${mono} text-[9px] text-muted`}>PARK SPACE PER RESIDENT</p>
+        <div className="flex items-end gap-3">
+          <div>
+            <p className="text-[22px] leading-none text-black">{p.per_resident_today ?? "—"} m²</p>
+            <p className="mt-1 text-[9px] text-muted">today</p>
+          </div>
+          {c.new_residents > 0 && (
+            <>
+              <span className="pb-3 text-muted">→</span>
+              <div>
+                <p className="text-[22px] leading-none text-prop-ink">{p.per_resident_with ?? "—"} m²</p>
+                <p className="mt-1 text-[9px] text-muted">with ≈{c.new_residents.toLocaleString()} new residents</p>
+              </div>
+            </>
+          )}
+        </div>
+        {p.city_per_resident != null && <p className="text-[10px] text-muted">Toronto overall: {p.city_per_resident} m² per resident (same data and rule).</p>}
+        {p.largest.length > 0 && (
+          <p className="leading-[1.5] text-black">
+            {p.largest
+              .slice(0, 3)
+              .map((x) => `${x.name} (${x.area_m2.toLocaleString()} m²)`)
+              .join(" · ")}
+          </p>
+        )}
+        {c.new_residents === 0 && (
+          <p className="leading-[1.5] text-muted">
+            {c.proposals_not_counted.length ? "The application doesn't state a number of homes, so no new residents are counted." : ""}
+          </p>
+        )}
+        {c.new_residents > 0 && (
+          <p className="text-[10px] leading-[1.5] text-muted">
+            {c.proposals_counted.map((x) => `${x.address}: ${x.units.toLocaleString()} homes (stated) × ${x.household_size} people per household`).join("; ")}
+            {c.proposals_not_counted.length ? `. Not counted (no homes stated): ${c.proposals_not_counted.map((x) => x.address).join(", ")}.` : "."}
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-1.5">
+        <p className={`${mono} text-[9px] text-muted`}>TRANSIT</p>
+        <p className="text-black">
+          {t.station
+            ? `${t.station.name} (${t.station.mode === "lrt" ? "LRT" : "subway"} Line ${t.station.lines.join(", ")}) · ${metres(t.station.distance_m)} away`
+            : "No subway or LRT station within 1.5 km."}
+        </p>
+        {Object.entries(t.routes).map(([mode, routes]) => (
+          <Row key={mode} label={`${MODE_LABEL[mode] ?? mode} routes within ${c.radius_m} m`} value={routes.join(", ")} />
+        ))}
+        <p className="text-[10px] text-muted">{t.stops_within_walk} TTC stops within {c.radius_m} m. Crowding data isn&apos;t public.</p>
+      </div>
+
+      <div className="space-y-1.5">
+        <p className={`${mono} text-[9px] text-muted`}>SCHOOLS WITHIN 1 KM · {c.schools.count}</p>
+        {c.schools.nearest.map((s) => (
+          <Row key={s.name} label={s.name} value={metres(s.distance_m)} />
+        ))}
+        <p className="text-[10px] leading-[1.5] text-muted">{c.schools.note}</p>
+      </div>
+
+      <div>
+        <button onClick={() => setWhy(!why)} className="text-[11px] text-prop-ink">
+          {why ? "⌄" : "›"} How these are estimated
+        </button>
+        {why && (
+          <div className="mt-1.5 space-y-1 text-[10px] leading-[1.5] text-muted">
+            {[...c.rules, p.rule].map((r) => (
+              <p key={r}>· {r}</p>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One line for the block view: new residents and park space per resident, all proposals together. */
+function BlockCapacityLine({ sceneKey, onOpen }: { sceneKey: string; onOpen: () => void }) {
+  const res = useFetch<Capacity>(`${API_URL}/api/capacity?scene_key=${encodeURIComponent(sceneKey)}&block=true`);
+  const c = res?.data;
+  if (!c || !c.new_residents || c.parks.per_resident_today == null) return null;
+  return (
+    <button onClick={onOpen} className="block w-full rounded-md bg-side p-2.5 text-left text-[11px] leading-[1.5] text-black hover:bg-soft">
+      ≈{c.new_residents.toLocaleString()} new residents from the homes stated · park space per resident within {c.radius_m} m:{" "}
+      {c.parks.per_resident_today} → {c.parks.per_resident_with} m² <span className="text-prop-ink">· details</span>
+    </button>
   );
 }
 
@@ -472,6 +596,7 @@ export function BlockPanel({
   onBack: () => void;
 }) {
   const [showSkipped, setShowSkipped] = useState(false);
+  const [capacityOpen, setCapacityOpen] = useState(false);
   const spec = result.spec;
   const app = result.application;
   const address = result.geocode?.address_full ?? "";
@@ -524,6 +649,17 @@ export function BlockPanel({
               </p>
             ) : null;
           })()}
+          {result.scene_key &&
+            (capacityOpen ? (
+              <div className="space-y-2 rounded-md border border-line p-3">
+                <button onClick={() => setCapacityOpen(false)} className="text-[11px] text-prop-ink">
+                  ⌄ All proposals together
+                </button>
+                <CapacityDetails sceneKey={result.scene_key} block />
+              </div>
+            ) : (
+              <BlockCapacityLine sceneKey={result.scene_key} onOpen={() => setCapacityOpen(true)} />
+            ))}
 
           <div className="border-t border-line">
             <div className="flex items-center gap-2.5 border-b border-line py-2.5">

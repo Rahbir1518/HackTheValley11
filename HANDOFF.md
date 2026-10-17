@@ -22,7 +22,7 @@ always separates **stated in the application** from **estimated by Ordis**.
 scripts/ingest.py        download City open data -> data/ordis.sqlite (EPSG:2952, SQLite R*Tree)
 backend/ (FastAPI)
   data/store.py          geocoding, nearby applications, lot lookup, context buildings/parcels/trees,
-                         ward summary, neighbourhood housing (2021 Census)
+                         ward summary, neighbourhood housing (2021 Census), heritage/rentals on a lot
   llm/providers.py       Gemini (default) / Groq / OpenRouter via env; JSON mode; retry; fallback chain
   llm/structured.py      ask_model: Pydantic validation + error feedback + retries
   agents/                data_agent (pick application), interpreter + spec.py (extract stated facts,
@@ -33,6 +33,9 @@ backend/ (FastAPI)
   sunlight.py            hours of ground-level sun lost/gained (solar ephemeris + 2D shadow polygons)
   block.py               "Your block in 5 years": every active nearby proposal placed in a built scene
   briefing.py            one-page community-meeting briefing PDF (reportlab)
+  site_facts.py          what stands on a lot today: heritage + registered rental homes + the application's
+                         own words about rental/demolition, and the replacement rule
+  capacity.py            "Can the neighbourhood absorb it?": parks per resident, transit, schools in a walk
   blender_bridge/        headless Blender subprocess, streams build steps
   main.py                API (see below)
 blender/
@@ -59,7 +62,7 @@ canvas `#EDF0EF`, rust `#AD542D`, proposal `#8FA5B7` / `#566F87`, selection `#E6
 python -m venv backend\.venv
 backend\.venv\Scripts\python -m pip install -r backend\requirements.txt
 copy .env.example .env                      # set BLENDER_PATH + at least one LLM key
-backend\.venv\Scripts\python scripts\ingest.py   # ~1.6 GB download, builds data\ordis.sqlite
+backend\.venv\Scripts\python scripts\ingest.py   # ~1.7 GB download, builds data\ordis.sqlite
 cd frontend; npm install; copy .env.example .env.local   # Clerk keys
 
 # every time (two terminals, repo root / frontend)
@@ -72,7 +75,10 @@ cd frontend; npm run dev                                               # http://
   (list in `demo_addresses.txt`; already saved: 135 Liberty St, 5250 Yonge St).
 - Terminal-only pipeline run: `backend\.venv\Scripts\python -m backend.run "135 Liberty St"`.
 - After changing Blender materials: `backend\.venv\Scripts\python -m backend.rebuild_scenes` (no AI calls).
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (53 passing). Frontend:
+- Reload some datasets in place: `backend\.venv\Scripts\python scripts\ingest.py --only heritage rentals`
+  (keys: dev_apps parcels address_points massing trees neighbourhoods profiles heritage rentals green_spaces
+  schools transit; add `--refresh` to re-download). New columns on old databases are added by `MIGRATIONS`.
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (58 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
@@ -98,7 +104,10 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 **Data & 3D**
 - City of Toronto open data ingested: Development Applications (26,648 rows incl. planner contacts and
   meetings), Address Points (525k), Property Boundaries (498k), 3D Massing 2025 (428k buildings),
-  Street Trees (688k), Neighbourhoods (158) + Neighbourhood Profiles 2021 housing rows.
+  Street Trees (688k), Neighbourhoods (158) + Neighbourhood Profiles 2021 housing rows (plus population and
+  average household size), Heritage Register (12,332), RentSafeTO apartment evaluations (3,464 registered
+  rental buildings, latest evaluation each), Green Spaces (3,381), School Locations (1,173), TTC GTFS stops
+  (9,409, each with the routes and modes serving it).
 - Deterministic Blender builds (same plan -> byte-identical `.glb`): textured facades aligned to storeys,
   roofs, streets from parcel gaps, low-poly trees sized from trunk diameter, mechanical penthouses,
   custom properties exported as glTF extras. Light palette matching the Figma.
@@ -146,11 +155,28 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   combined figure when the block view is on), meetings, the planner and the record link; neutrality note,
   limitations and sources in the footer. Shrinks to fit one page; uses Segoe UI / Arial / DejaVu when present
   for Unicode, else Helvetica with ASCII substitutes.
+- **On this site today** (Overview card, `GET /api/site`): Heritage Register entries on the lot (Part IV
+  designated / Part V district / Listed) and how many within 100 m; registered rental buildings on the lot
+  (units, year built, landlord type); sentences of the application text about rental, demolition, retention or
+  replacement, **quoted** ("The application says:"). A rental building on the lot is *not* presented as a
+  demolition (many applications are infill beside a retained tower). "What the rules say": Official Plan
+  3.2.1.6 + Municipal Code Ch. 667 rental replacement, heritage permits, Tenant Hotline. Quiet sites get one
+  line. The block view counts rental homes on all lots; the briefing PDF has an "On this site today" section.
+  95 active OZ/SA applications filed since 2022 have a registered rental building on the lot
+  (e.g. 240 Wellesley St E, 2575 Danforth Ave, 25 Mabelle Ave).
+- **Neighbourhood capacity** (Overview drill-in, `GET /api/capacity?scene_key=&block=`): within a 500 m
+  circle: residents today (estimate: 2021 neighbourhood population spread evenly, clipped), new residents
+  (estimate: homes *stated* x neighbourhood average household size; proposals without stated homes listed as
+  not counted), park space per resident today -> with (Green Spaces: Park, Open Green Space, Civic Centre
+  Square, OTHER_CITY, OTHER_TRCA) vs Toronto overall from the same data (32.8 m2); nearest subway/LRT
+  within 1.5 km, bus/streetcar routes within 500 m (overnight 3xx left out); schools within 1 km (capacity
+  is not open data, said so). Block panel: one line for all proposals (135 Liberty: 6.4 -> 5.4 m2 per
+  resident with about 1,318 new residents), expandable. Also in the briefing PDF.
 - Clear progress card: steps tick off; on a refusal it says where it stopped, marks skipped steps and offers
   other nearby proposals that can be shown in 3D.
 
 **Other endpoints**: `/api/health`, `/api/applications`, `/api/ward`, `/api/sources`, `/api/cached`,
-`/api/involved`, `/api/housing`, `/api/ask`, `/api/block`, `/api/briefing`, `/files/...` (scenes, previews, heatmaps).
+`/api/involved`, `/api/housing`, `/api/ask`, `/api/block`, `/api/briefing`, `/api/site`, `/api/capacity`, `/files/...` (scenes, previews, heatmaps).
 
 ## Data gotchas worth remembering
 
@@ -162,6 +188,15 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   structured storeys/height: everything comes from `DESCRIPTION`.
 - No open sale-price data exists (MPAC/TRREB are proprietary); housing uses 2021 Census owner estimates.
 - Toronto open data only covers the City of Toronto.
+- Heritage Register is a point shapefile in **WGS84** (status Part IV / Part V / Listed; `YEAR_DEMOL` marks gone
+  ones). RentSafeTO evaluations have several rows per building (one per year): keep the latest per `RSN`; use
+  `LATITUDE/LONGITUDE` (the X/Y columns are another MTM datum). The registry only covers 3+ storeys and 10+ units.
+- Green Spaces and School Locations come as EPSG:2952 CSVs (no reprojection). TTC GTFS has no parent stations
+  (`location_type` empty) and the mode lives on routes: `route_type` 1 = subway, 0 = streetcar except "Line 5"
+  (LRT), 3 = bus; stop -> routes needs trips + stop_times (207 MB, streamed in a few seconds).
+- `str.title()` makes "Queen'S Park"; ingest uses `proper()` for names.
+- `shapely.make_valid` on a bad 3D Massing footprint can return lines/collections; `sunlight.Shadower` keeps only
+  polygon parts (this crashed the sun study at 100 Queen St W).
 
 ## Code gotchas already solved
 
@@ -186,6 +221,10 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 ## Known limitations
 
 - Footprints come from property lines (no setbacks from the street); heights/storeys from text; massing only.
+- **Infill on sites with existing towers is misdrawn**: "With proposal" hides every building on the lot and the
+  podium fills the lot, even when the application keeps them (e.g. 240 Wellesley St E keeps 2,197 rental homes).
+  The "On this site today" card quotes the text correctly, but the 3D model doesn't yet. Fix idea: keep on-site
+  buildings the application says are retained and place new masses on the free part of the lot.
 - Shadows/sun loss: clear sky, ground level, flat terrain.
 - Context buildings are the City's 2025 massing (may predate recent construction).
 - Free LLM tiers are small; pre-warm demo addresses.
@@ -200,6 +239,10 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 6. ~~One-page briefing PDF~~ (built).
 7. Ward map coloured by application status.
 8. Narrated flyover (browser speech).
+9. Plain-language summaries/briefing in Toronto's main languages (numbers and stated/estimated labels kept).
+10. Committee of Adjustment applications (separate open dataset: garden suites, additions, minor variances).
+11. Watch an address: notify on status changes or new meetings (daily ingest diff).
+12. Retained buildings on infill sites (see Known limitations).
 
 Optional tweak discussed: the Get involved email says "I live near <application address>"; could use the
 address the resident searched instead.
