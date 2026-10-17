@@ -244,6 +244,41 @@ def context_trees(db, site: Site, radius_m: float = 250) -> list[dict]:
             for r in rows if (r["x"] - ox) ** 2 + (r["y"] - oy) ** 2 <= radius_m ** 2]
 
 
+HOUSING_FIELDS = ("median_value", "median_rent", "median_owner_cost", "pct_owner_30", "pct_tenant_30",
+                  "renter_share", "apartment_share")
+
+
+def housing_context(db, x: float, y: float) -> dict | None:
+    """2021 Census housing indicators for the neighbourhood containing (x, y), with how it
+    compares to the 158 neighbourhoods (median across neighbourhoods and percentile rank)."""
+    pt = Point(x, y)
+    hit = None
+    for r in _rtree_rows(db, "neighbourhoods", x, y, x, y, "name, geom"):
+        if shapely.from_wkb(r["geom"]).covers(pt):
+            hit = r["id"]
+            break
+    if hit is None:
+        return None
+    rows = [dict(r) for r in db.execute("SELECT * FROM nbhd_housing")]
+    for r in rows:
+        hh = r["households"] or 0
+        r["renter_share"] = round(100 * r["renters"] / hh, 1) if hh and r["renters"] is not None else None
+        r["apartment_share"] = round(100 * r["apartments_5plus"] / hh, 1) if hh and r["apartments_5plus"] else None
+    me = next(r for r in rows if r["id"] == hit)
+    compare = {}
+    for f in HOUSING_FIELDS:
+        values = sorted(r[f] for r in rows if r[f] is not None)
+        if me[f] is None or not values:
+            continue
+        compare[f] = {
+            "value": me[f],
+            "median_of_neighbourhoods": values[len(values) // 2],
+            "percentile": round(100 * sum(v < me[f] for v in values) / len(values)),
+        }
+    return {"neighbourhood": me["name"], "number": hit, "households": me["households"], "owners": me["owners"],
+            "renters": me["renters"], "indicators": compare, "census_year": 2021, "neighbourhood_count": len(rows)}
+
+
 # ------------------------------------------------------------------ local frame
 
 def to_local(geom: shapely.Geometry, origin) -> shapely.Geometry:

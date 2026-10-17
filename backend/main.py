@@ -108,6 +108,46 @@ def involved(app_number: str):
     }
 
 
+def _cached_spec(db, app_: dict) -> dict | None:
+    from .agents import data_agent
+
+    spec_file = orchestrator.spec_cache_path(app_, data_agent.related_applications(db, app_))
+    return json.loads(spec_file.read_text())["spec"] if spec_file.exists() else None
+
+
+def _housing(db, app_: dict) -> dict | None:
+    """Neighbourhood housing context plus what the proposal adds (when the application states units)."""
+    ctx = store.housing_context(db, app_["x"], app_["y"])
+    if not ctx:
+        return None
+    spec = _cached_spec(db, app_)
+    units = spec.get("units") if spec else None
+    ctx["proposal"] = {
+        "use_type": spec.get("use_type") if spec else None,
+        "units": units,
+        "units_stated": units is not None,
+        "share_of_households_pct": round(100 * units / ctx["households"], 1) if units and ctx["households"] else None,
+        "gfa_m2": spec.get("gfa_m2") if spec else None,
+    }
+    ctx["source"] = {"label": "City of Toronto Neighbourhood Profiles (2021 Census)",
+                     "url": "https://open.toronto.ca/dataset/neighbourhood-profiles/"}
+    return ctx
+
+
+@app.get("/api/housing")
+def housing(app_number: str):
+    """Housing context for the application's neighbourhood (2021 Census, 158 neighbourhoods)."""
+    db = store.connect()
+    try:
+        app_ = store.get_application(db, app_number)
+    except store.DataError as e:
+        raise HTTPException(404, str(e))
+    ctx = _housing(db, app_)
+    if not ctx:
+        raise HTTPException(404, "This location is not inside a City of Toronto neighbourhood boundary")
+    return ctx
+
+
 class AskRequest(BaseModel):
     app_number: str
     question: str = Field(min_length=2, max_length=500)
@@ -125,15 +165,19 @@ async def ask(req: AskRequest):
         app_ = store.get_application(db, req.app_number)
     except store.DataError as e:
         raise HTTPException(404, str(e))
-    spec_file = orchestrator.spec_cache_path(app_, data_agent.related_applications(db, app_))
-    spec = json.loads(spec_file.read_text())["spec"] if spec_file.exists() else None
+    spec = _cached_spec(db, app_)
 
     key = orchestrator._hash([req.app_number, " ".join(req.question.lower().split()), req.history[-3:]])
     cache_file = orchestrator.CACHE / "qa" / f"{key}.json"
     if cache_file.exists():
         return json.loads(cache_file.read_text()) | {"cached": True}
 
-    sources = qa.build_sources(db, req.app_number, spec)
+    extra = {}
+    housing_ctx = _housing(db, app_)
+    if housing_ctx:
+        extra["neighbourhood_housing"] = {"label": f"{housing_ctx['source']['label']}: {housing_ctx['neighbourhood']}",
+                                          "url": housing_ctx["source"]["url"], "content": housing_ctx}
+    sources = qa.build_sources(db, req.app_number, spec, extra)
     try:
         provider = get_provider()
         a = await qa.answer(provider, req.question, sources, req.history)

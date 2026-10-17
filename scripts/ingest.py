@@ -63,7 +63,18 @@ DATASETS = {
         "resource": "Street Tree Data",
         "dump_fields": "COMMON_NAME,DBH_TRUNK,geometry",
     },
+    "neighbourhoods": {
+        "package": "neighbourhoods",
+        "resource": "Neighbourhoods",  # 158-neighbourhood model
+        "dump_fields": "AREA_SHORT_CODE,AREA_NAME,geometry",
+    },
+    "profiles": {
+        "package": "neighbourhood-profiles",
+        "resource": "neighbourhood-profiles-2021-158-model",  # XLSX download
+        "dump_fields": None,
+    },
 }
+FILE_EXT = {"massing": "zip", "profiles": "xlsx"}
 # Tables each dataset writes (used by --only to replace just those).
 TABLES = {
     "dev_apps": ["dev_apps", "dev_apps_idx"],
@@ -71,6 +82,8 @@ TABLES = {
     "address_points": ["address_points"],
     "massing": ["buildings", "buildings_idx"],
     "trees": ["street_trees", "street_trees_idx"],
+    "neighbourhoods": ["neighbourhoods", "neighbourhoods_idx"],
+    "profiles": ["nbhd_housing"],
 }
 
 
@@ -112,7 +125,7 @@ def fetch_all(refresh: bool, keys) -> dict:
     meta = {}
     for key in keys:
         info = resolve(key)
-        dest = RAW / (f"{key}.zip" if key == "massing" else f"{key}.csv")
+        dest = RAW / f"{key}.{FILE_EXT.get(key, 'csv')}"
         if refresh or not dest.exists():
             download(info["resource_url"], dest)
         else:
@@ -252,6 +265,55 @@ def load_trees(db, path: Path) -> None:
     print(f"  street_trees: {len(rows)} rows")
 
 
+def load_neighbourhoods(db, path: Path) -> None:
+    rows, geoms = [], []
+    with open(path, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if r["geometry"]:
+                geoms.append(shape(json.loads(r["geometry"])))
+                rows.append((int(r["AREA_SHORT_CODE"]), r["AREA_NAME"]))
+    geoms = shapely.make_valid(shapely.transform(np.array(geoms, dtype=object), transformer(4326)))
+    bounds, wkb = shapely.bounds(geoms), shapely.to_wkb(geoms)
+    db.executemany("INSERT INTO neighbourhoods VALUES (?,?,?)", ((c, n, wkb[i]) for i, (c, n) in enumerate(rows)))
+    db.executemany("INSERT INTO neighbourhoods_idx VALUES (?,?,?,?,?)",
+                   ((rows[i][0], b[0], b[2], b[1], b[3]) for i, b in enumerate(bounds)))
+    print(f"  neighbourhoods: {len(rows)} rows")
+
+
+# Row labels in the 2021 profile workbook (first match wins; leading spaces are stripped).
+PROFILE_ROWS = {
+    "households": "Total - Private households by tenure - 25% sample data",
+    "owners": "Owner",
+    "renters": "Renter",
+    "apartments_5plus": "Apartment in a building that has five or more storeys",
+    "median_value": "Median value of dwellings ($)",
+    "median_owner_cost": "Median monthly shelter costs for owned dwellings ($)",
+    "median_rent": "Median monthly shelter costs for rented dwellings ($)",
+    "pct_owner_30": "% of owner households spending 30% or more of its income on shelter costs",
+    "pct_tenant_30": "% of tenant households spending 30% or more of its income on shelter costs",
+}
+
+
+def load_profiles(db, path: Path) -> None:
+    import openpyxl
+    rows = list(openpyxl.load_workbook(path, read_only=True).worksheets[0].iter_rows(values_only=True))
+    names, numbers = rows[0][1:], rows[1][1:]
+    found = {}
+    for r in rows:
+        label = str(r[0] or "").strip()
+        for key, wanted in PROFILE_ROWS.items():
+            if key not in found and label == wanted:
+                found[key] = r[1:]
+    missing = set(PROFILE_ROWS) - set(found)
+    if missing:
+        raise RuntimeError(f"profile rows not found: {sorted(missing)}")
+    cols = list(PROFILE_ROWS)
+    db.executemany(
+        f"INSERT INTO nbhd_housing (id, name, {', '.join(cols)}) VALUES ({','.join('?' * (len(cols) + 2))})",
+        ((int(numbers[i]), names[i], *[to_float(found[k][i]) for k in cols]) for i in range(len(names))))
+    print(f"  nbhd_housing: {len(names)} neighbourhoods")
+
+
 def rings_to_geom(points, parts) -> shapely.Geometry | None:
     """Shapefile rings -> (Multi)Polygon. Outer rings are clockwise, holes counter-clockwise."""
     bounds = list(parts) + [len(points)]
@@ -326,7 +388,8 @@ def main() -> None:
 
     print("Building database")
     loaders = {"dev_apps": load_dev_apps, "address_points": load_address_points,
-               "parcels": load_parcels, "massing": load_massing, "trees": load_trees}
+               "parcels": load_parcels, "massing": load_massing, "trees": load_trees,
+               "neighbourhoods": load_neighbourhoods, "profiles": load_profiles}
     for key in keys:
         for table in TABLES[key]:
             db.execute(f"DELETE FROM {table}")

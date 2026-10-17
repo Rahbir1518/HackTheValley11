@@ -67,6 +67,28 @@ CREATE TABLE IF NOT EXISTS street_trees (
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS street_trees_idx USING rtree(id, minx, maxx, miny, maxy);
 
+CREATE TABLE IF NOT EXISTS neighbourhoods (
+    id INTEGER PRIMARY KEY,           -- AREA_SHORT_CODE (1-174, 158 neighbourhoods)
+    name TEXT,
+    geom BLOB
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS neighbourhoods_idx USING rtree(id, minx, maxx, miny, maxy);
+
+-- 2021 Census housing indicators from the City's Neighbourhood Profiles (158-neighbourhood model)
+CREATE TABLE IF NOT EXISTS nbhd_housing (
+    id INTEGER PRIMARY KEY,           -- neighbourhood number
+    name TEXT,
+    households INTEGER,
+    owners INTEGER,
+    renters INTEGER,
+    apartments_5plus INTEGER,
+    median_value REAL,                -- median value of owned dwellings ($)
+    median_owner_cost REAL,           -- median monthly shelter costs, owned ($)
+    median_rent REAL,                 -- median monthly shelter costs, rented ($)
+    pct_owner_30 REAL,                -- % owner households spending 30%+ of income on shelter
+    pct_tenant_30 REAL                -- % tenant households spending 30%+ of income on shelter
+);
+
 CREATE TABLE IF NOT EXISTS address_points (
     id INTEGER PRIMARY KEY,
     address_full TEXT,

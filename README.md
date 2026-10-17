@@ -153,6 +153,7 @@ The same plan always produces a byte-identical `.glb`.
 | [3D Massing](https://open.toronto.ca/dataset/3d-massing/) (2025) | surrounding buildings + heights | Despite the "WGS84" file name, the shapefile is Web Mercator (EPSG:3857). Flat footprints with `AVG_HEIGHT`; `MAX_HEIGHT` is 0 for non-LiDAR rows. |
 | [Address Points](https://open.toronto.ca/dataset/address-points-municipal-toronto-one-address-repository/) | geocoding | Used instead of Nominatim. |
 | [Street Tree Data](https://open.toronto.ca/dataset/street-tree-data/) | street trees in the scene | Only trunk diameter is published; tree height/crown size are estimated from it. |
+| [Neighbourhoods](https://open.toronto.ca/dataset/neighbourhoods/) + [Neighbourhood Profiles](https://open.toronto.ca/dataset/neighbourhood-profiles/) (2021 Census, 158 model) | Housing tab: renters, rent, shelter-cost burden, home values | No open sale-price data exists (MPAC/TRREB data is proprietary); Census home values are owner estimates. |
 
 Streets in the 3D scene are the gaps between non-road property parcels (`CORRIDOR` parcels are road allowances).
 Facade window grids are illustrative and aligned to storey heights; they are not real window positions.

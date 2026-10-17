@@ -23,6 +23,11 @@ const DATASETS = [
     href: "https://open.toronto.ca/dataset/address-points-municipal-toronto-one-address-repository/",
   },
   {
+    name: "Neighbourhood Profiles",
+    use: "Who rents, what housing costs, in your neighbourhood (2021 Census)",
+    href: "https://open.toronto.ca/dataset/neighbourhood-profiles/",
+  },
+  {
     name: "Street Tree Data",
     use: "The trees on your street",
     href: "https://open.toronto.ca/dataset/street-tree-data/",

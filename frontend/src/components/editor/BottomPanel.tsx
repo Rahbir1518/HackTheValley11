@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import type { Application, RunResult, StepEvent } from "@/lib/api";
 import AskOrdis from "./AskOrdis";
 import GetInvolved from "./GetInvolved";
+import HousingContext from "./HousingContext";
 import { Badge, ToolButton } from "./ui";
 
 const AGENT_STYLE: Record<string, string> = {
@@ -30,7 +31,7 @@ const KIND_ICON: Record<string, string> = {
   done: "★",
 };
 
-type Tab = "console" | "summary" | "ask" | "involved" | "applications" | "ward";
+type Tab = "console" | "summary" | "ask" | "housing" | "involved" | "applications" | "ward";
 
 interface Props {
   events: StepEvent[];
@@ -55,6 +56,7 @@ export default function BottomPanel({ events, result, running, onClear, onModel,
     ["console", `Console${events.length ? ` (${events.length})` : ""}`],
     ["summary", "Summary"],
     ["ask", "✦ Ask Ordis"],
+    ["housing", "Housing"],
     ["involved", "Get involved"],
     ["applications", `Applications${result?.candidates ? ` (${result.candidates.length})` : ""}`],
     ["ward", "Ward"],
@@ -84,6 +86,7 @@ export default function BottomPanel({ events, result, running, onClear, onModel,
         {tab === "console" && <Console events={events} />}
         {tab === "summary" && <Summary result={result} />}
         {tab === "ask" && <AskOrdis appNumber={result?.ok ? result.application?.app_number ?? null : null} />}
+        {tab === "housing" && <HousingContext appNumber={result?.ok ? result.application?.app_number ?? null : null} />}
         {tab === "involved" && <GetInvolved appNumber={result?.ok ? result.application?.app_number ?? null : null} />}
         {tab === "applications" && <Applications result={result} onModel={onModel} running={running} includeClosed={includeClosed} />}
         {tab === "ward" && <Ward result={result} />}
