@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
@@ -30,7 +31,7 @@ from .llm.providers import provider_status  # noqa: E402
 
 app = FastAPI(title="Ordis")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
-                   allow_methods=["GET"], allow_headers=["*"])
+                   allow_methods=["GET", "POST"], allow_headers=["*"])
 orchestrator.CACHE.mkdir(parents=True, exist_ok=True)
 app.mount("/files", StaticFiles(directory=orchestrator.CACHE), name="files")
 
@@ -105,6 +106,48 @@ def involved(app_number: str):
         "past_meetings": [m for m in ordered if m["date"] < today][-3:],
         "today": today,
     }
+
+
+class AskRequest(BaseModel):
+    app_number: str
+    question: str = Field(min_length=2, max_length=500)
+    history: list[dict] = Field(default_factory=list)  # [{"q": ..., "a": ...}], last few turns
+
+
+@app.post("/api/ask")
+async def ask(req: AskRequest):
+    """Ask Ordis: a cited answer grounded in this application's data (answers are cached)."""
+    from .agents import data_agent, qa
+    from .llm.providers import LLMError, get_provider
+
+    db = store.connect()
+    try:
+        app_ = store.get_application(db, req.app_number)
+    except store.DataError as e:
+        raise HTTPException(404, str(e))
+    spec_file = orchestrator.spec_cache_path(app_, data_agent.related_applications(db, app_))
+    spec = json.loads(spec_file.read_text())["spec"] if spec_file.exists() else None
+
+    key = orchestrator._hash([req.app_number, " ".join(req.question.lower().split()), req.history[-3:]])
+    cache_file = orchestrator.CACHE / "qa" / f"{key}.json"
+    if cache_file.exists():
+        return json.loads(cache_file.read_text()) | {"cached": True}
+
+    sources = qa.build_sources(db, req.app_number, spec)
+    try:
+        provider = get_provider()
+        a = await qa.answer(provider, req.question, sources, req.history)
+    except LLMError as e:
+        raise HTTPException(503, f"Ask Ordis is unavailable: {e}")
+    out = {
+        "question": req.question,
+        **a.model_dump(),
+        "sources": {k: {"label": v["label"], "url": v["url"]} for k, v in sources.items()},
+        "provider_notes": list(getattr(provider, "notes", [])),
+    }
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(out, default=str))
+    return out
 
 
 @app.get("/api/cached")

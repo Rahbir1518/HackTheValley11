@@ -50,6 +50,12 @@ def _safe(app_number: str) -> str:
     return "".join(c if c.isalnum() else "_" for c in app_number)
 
 
+def spec_cache_path(app: dict, related: list[dict]) -> Path:
+    """Interpreter cache file, keyed by the application text it read."""
+    text_hash = _hash([app["description"]] + [r["description"] for r in related])
+    return CACHE / "specs" / f"{_safe(app['app_number'])}_{text_hash}.json"
+
+
 def _run_key(address: str, app_number: str | None, include_closed: bool) -> tuple[str, str]:
     parsed = parse_address(address)
     norm = f"{parsed[0]} {parsed[1]}" if parsed else " ".join(address.upper().split())
@@ -198,8 +204,7 @@ async def _run_pipeline(address: str, emit: Emit, app_number: str | None, includ
                f"{neighbours['count']} buildings within {CONTEXT_RADIUS_M} m", result["site"])
 
     # ---------------------------------------------------------------- Interpreter Agent
-    text_key = f"{_safe(app['app_number'])}_{_hash([app['description']] + [r['description'] for r in related])}"
-    spec_file = CACHE / "specs" / f"{text_key}.json"
+    spec_file = spec_cache_path(app, related)
     try:
         if spec_file.exists():
             cached = json.loads(spec_file.read_text())
