@@ -38,17 +38,22 @@ def test_views_dedupe_panoramas_cache_and_work_offline(tmp_path, monkeypatch):
         calls.append(request.url.path)
         if request.url.path.endswith("/metadata"):
             lat, lon = map(float, request.url.params["location"].split(","))
-            # Two panoramas: one for the south probe, one shared by the rest.
-            south = lat < streetview._latlon((0, -20), origin)[0]
-            pano = ("SOUTH", (0, -45)) if south else ("NORTH", (0, 40))
+            # Google panoramas south and north of the site; a user photosphere to the east.
+            x, y = streetview._local(lat, lon, origin)
+            if x > 20:
+                pano, credit = ("CAoSUSER", (40, 0)), "© Some Person"
+            elif y < 0:
+                pano, credit = ("SOUTH", (0, -45)), "© Google"
+            else:
+                pano, credit = ("NORTH", (0, 40)), "© Google"
             plat, plon = streetview._latlon(pano[1], origin)
             return httpx.Response(200, json={"status": "OK", "pano_id": pano[0], "date": "2025-06",
-                                             "location": {"lat": plat, "lng": plon}})
+                                             "copyright": credit, "location": {"lat": plat, "lng": plon}})
         return httpx.Response(200, content=b"\xff\xd8jpeg", headers={"content-type": "image/jpeg"})
 
     monkeypatch.setenv("GOOGLE_MAPS_API_KEY", "test-key")
     found = streetview.views(scene, origin, httpx.Client(transport=httpx.MockTransport(handler)))
-    assert sorted(v["pano_id"] for v in found) == ["NORTH", "SOUTH"]
+    assert sorted(v["pano_id"] for v in found) == ["NORTH", "SOUTH"]  # the user photosphere is left out
     north = next(v for v in found if v["pano_id"] == "NORTH")
     assert north["heading"] == pytest.approx(180, abs=1)  # north of the site: look south
     rel = streetview.photo(scene, north, north["heading"], httpx.Client(transport=httpx.MockTransport(handler)))
@@ -60,3 +65,19 @@ def test_views_dedupe_panoramas_cache_and_work_offline(tmp_path, monkeypatch):
     assert streetview.photo(scene, north, north["heading"]) == rel
     with pytest.raises(streetview.StreetViewError, match="GOOGLE_MAPS_API_KEY"):
         streetview.photo(scene, north, (north["heading"] + 20) % 360)
+
+
+def test_pick_views_prefers_whole_building_then_different_sides():
+    def v(pid, bearing, dist, fits=True):
+        return {"pano_id": pid, "bearing": bearing, "distance_m": dist, "fits": fits}
+    picked = streetview.pick_views([v("a", 0, 40), v("b", 10, 35), v("c", 180, 60), v("d", 90, 20, fits=False)], limit=3)
+    # "a" is on the same side as "b" (used only to fill up); "d" crops the building and is left out.
+    assert [p["pano_id"] for p in picked] == ["b", "c", "a"]
+    # With fewer than two whole-building views, a close-up is better than nothing.
+    assert [p["pano_id"] for p in streetview.pick_views([v("d", 90, 20, fits=False)])] == ["d"]
+
+
+def test_only_googles_own_imagery_is_used():
+    assert streetview.is_google({"pano_id": "Xu5j57JSsGtlG7zXcnSJAg", "copyright": "© Google"})
+    assert not streetview.is_google({"pano_id": "CAoSFkNJSE0", "copyright": "© Brendan May"})
+    assert not streetview.is_google({"pano_id": "CAoSFkNJSE0", "copyright": "© MIB360- Google Virtual Tours"})

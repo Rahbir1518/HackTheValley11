@@ -107,7 +107,6 @@ export interface StreetOverlayProps {
   camera: StreetCamera;
   showProposal: boolean;
   block?: BlockProposal[] | null;
-  sun: Sun;
 }
 
 /** Puts a three.js camera exactly where the Street View camera was (heading clockwise from
@@ -133,13 +132,25 @@ export function StreetOverlay(props: StreetOverlayProps) {
       camera={{ manual: true }}
       style={{ background: "transparent" }}
     >
-      <SunLight sun={props.sun.up ? props.sun : { ...props.sun, up: true, altitudeDeg: 40, direction: [0.4, 0.8, 0.45] }} shadows={false} />
+      <StreetLights camera={props.camera} />
       <StreetRig camera={props.camera} />
       <Suspense fallback={null}>
         <StreetScene {...props} />
         {props.block && props.showProposal && <BlockMasses proposals={props.block} selected={null} />}
       </Suspense>
     </Canvas>
+  );
+}
+
+/** Soft daylight from behind and above the camera, so the facade facing the viewer is always
+ *  readable against the photo (the photo's own lighting has nothing to do with the study clock). */
+function StreetLights({ camera: c }: { camera: StreetCamera }) {
+  const h = THREE.MathUtils.degToRad(c.heading);
+  return (
+    <>
+      <hemisphereLight args={["#ffffff", "#c9cfcc", 1.5]} />
+      <directionalLight position={[c.x - Math.sin(h) * 300 + 120, 400, -c.y + Math.cos(h) * 300]} intensity={2.2} />
+    </>
   );
 }
 

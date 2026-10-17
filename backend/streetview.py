@@ -23,11 +23,13 @@ META_URL = "https://maps.googleapis.com/maps/api/streetview/metadata"
 IMAGE_URL = "https://maps.googleapis.com/maps/api/streetview"
 WIDTH, HEIGHT = 640, 400  # Static API maximum is 640 px a side
 CAMERA_HEIGHT_M = 2.5  # Street View camera above the road (approximate)
-SEARCH_M = 60  # how far from each probe point a panorama may be
-PROBE_M = 45  # probe points around the site, so several sides of the block are offered
+SEARCH_M = 50  # how far from each probe point a panorama may be
+PROBE_RINGS_M = (30, 60)  # probe points on two rings around the site (8 directions each; lookups are free)
 MAX_VIEWS = 4
+MIN_SPREAD_DEG = 60  # different sides of the site
+MIN_COMFORT_M = 35  # closer panoramas are offered after farther ones
 MIN_FOV, MAX_FOV = 25.0, 120.0
-VERSION = 1
+VERSION = 5  # 2: Google imagery only, more probes, different sides; 3: exact "(c) Google"; 4: drop cropped close-ups; 5: close panoramas after farther ones
 
 
 class StreetViewError(RuntimeError):
@@ -102,6 +104,34 @@ def _metadata(client: httpx.Client, lat: float, lon: float, key: str) -> dict | 
     return None  # ZERO_RESULTS / NOT_FOUND
 
 
+def is_google(meta: dict) -> bool:
+    """Google's own Street View car/trekker imagery. User-uploaded photospheres (credited to a
+    person, IDs like "CAoS...") have unreliable position, height and compass heading, so the
+    model would not line up on them."""
+    credit = "".join(ch for ch in (meta.get("copyright") or "").lower() if ch.isalpha())
+    # Exactly "(c) Google": third-party tours such as "MIB360- Google Virtual Tours" don't count.
+    return credit == "google" and not str(meta.get("pano_id", "")).startswith("CAoS")
+
+
+def pick_views(candidates: list[dict], limit: int = MAX_VIEWS) -> list[dict]:
+    """Whole building in frame first, then nearest; each further view from a different side of
+    the site (at least MIN_SPREAD_DEG around from the ones already picked) when possible."""
+    # Whole building in frame, then not right on top of it (too close reads as a wall), then nearest.
+    ordered = sorted(candidates, key=lambda v: (not v["fits"], v["distance_m"] < MIN_COMFORT_M, v["distance_m"]))
+    if sum(v["fits"] for v in ordered) >= 2:  # close-ups that crop the building only when nothing better exists
+        ordered = [v for v in ordered if v["fits"]]
+    picked: list[dict] = []
+    for v in ordered:
+        if all(abs((v["bearing"] - p["bearing"] + 180) % 360 - 180) >= MIN_SPREAD_DEG for p in picked):
+            picked.append(v)
+    for v in ordered:  # not enough sides covered: fill with the next best
+        if len(picked) >= limit:
+            break
+        if v not in picked:
+            picked.append(v)
+    return picked[:limit]
+
+
 def views(scene_dir: Path, origin, client: httpx.Client | None = None) -> list[dict]:
     """Up to MAX_VIEWS distinct panoramas around the site (cached in street/views.json)."""
     out_dir = scene_dir / "street"
@@ -115,23 +145,21 @@ def views(scene_dir: Path, origin, client: httpx.Client | None = None) -> list[d
         raise StreetViewError("Set GOOGLE_MAPS_API_KEY (Street View Static API enabled) to see the street view.")
     plan = json.loads((scene_dir / "plan.json").read_text())
     masses = sunlight.proposal_masses(plan["steps"])
-    probes = [(0.0, 0.0)] + [(PROBE_M * math.sin(math.radians(a)), PROBE_M * math.cos(math.radians(a)))
-                             for a in (0, 90, 180, 270)]
+    probes = [(0.0, 0.0)] + [(r * math.sin(math.radians(a)), r * math.cos(math.radians(a)))
+                             for r in PROBE_RINGS_M for a in range(0, 360, 45)]
     found: dict[str, dict] = {}
     with (client or httpx.Client()) as c:
         for probe in probes:
             meta = _metadata(c, *_latlon(probe, origin), key)
-            if not meta or meta["pano_id"] in found:
+            if not meta or meta["pano_id"] in found or not is_google(meta):
                 continue
             x, y = _local(meta["location"]["lat"], meta["location"]["lng"], origin)
             cam = frame((x, y), masses)
             found[meta["pano_id"]] = {"pano_id": meta["pano_id"], "lat": meta["location"]["lat"],
                                       "lon": meta["location"]["lng"], "x": x, "y": y,
-                                      "date": meta.get("date"), "copyright": meta.get("copyright"), **cam}
-    # Views that show the whole building first, then nearest; skip panoramas so close the camera
-    # would sit inside it.
-    result = sorted((v for v in found.values() if v["distance_m"] >= 12),
-                    key=lambda v: (not v["fits"], v["distance_m"]))[:MAX_VIEWS]
+                                      "date": meta.get("date"), "copyright": meta.get("copyright"),
+                                      "bearing": round(math.degrees(math.atan2(x, y)) % 360, 1), **cam}
+    result = pick_views([v for v in found.values() if v["distance_m"] >= 12])
     out_dir.mkdir(parents=True, exist_ok=True)
     cache.write_text(json.dumps({"version": VERSION, "views": result}))
     return result

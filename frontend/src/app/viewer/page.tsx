@@ -422,7 +422,7 @@ function Viewer() {
 
           <div ref={viewportBox} className="relative min-h-0 flex-1 bg-canvas">
             {glbUrl && streetView && sceneKey && (
-              <StreetMontage sceneKey={sceneKey} glbUrl={glbUrl} showProposal={showProposal} block={blockProposals} sun={sun} />
+              <StreetMontage sceneKey={sceneKey} glbUrl={glbUrl} showProposal={showProposal} block={blockProposals} />
             )}
             {glbUrl && !splitView && !streetView && (
               <Viewport

@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { API_URL, getStreet, type BlockProposal, type StreetView } from "@/lib/api";
-import type { Sun } from "@/lib/sun";
 
 const StreetOverlay = dynamic(() => import("@/components/viewer/Viewport").then((m) => m.StreetOverlay), { ssr: false });
 
@@ -17,13 +16,11 @@ export default function StreetMontage({
   glbUrl,
   showProposal,
   block,
-  sun,
 }: {
   sceneKey: string;
   glbUrl: string;
   showProposal: boolean;
   block: BlockProposal[] | null;
-  sun: Sun;
 }) {
   const [view, setView] = useState(0);
   const [turn, setTurn] = useState(0);
@@ -52,7 +49,7 @@ export default function StreetMontage({
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={`${API_URL}${d.image_url}`} crossOrigin="anonymous" alt="Street View photo facing the site" className="absolute inset-0 size-full object-cover" />
         <div className="absolute inset-0">
-          <StreetOverlay glbUrl={glbUrl} camera={c} showProposal={showProposal} block={block} sun={sun} />
+          <StreetOverlay glbUrl={glbUrl} camera={c} showProposal={showProposal} block={block} />
         </div>
         <span className="absolute bottom-0 right-0 bg-black/50 px-1.5 text-[9px] text-white/90">{d.copyright}</span>
       </div>
