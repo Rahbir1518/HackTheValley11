@@ -16,7 +16,8 @@ SUFFIXES = {
 }
 DIRECTIONS = {"EAST": "E", "WEST": "W", "NORTH": "N", "SOUTH": "S"}
 
-_ADDRESS_RE = re.compile(r"^\s*(\d+)\s*[A-Z]?\s+(.+)$")
+# "135 LIBERTY ST", "39A FRASER AVE", and ranges like "5250-5254 YONGE ST" (first number is used)
+_ADDRESS_RE = re.compile(r"^\s*(\d+)(?:\s*-\s*\d+)?\s*[A-Z]?\s+(.+)$")
 
 
 def normalize_street(text: str) -> str:

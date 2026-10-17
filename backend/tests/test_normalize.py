@@ -6,6 +6,10 @@ def test_parse_address_long_forms():
     assert parse_address("100 Queen Street West") == (100, "QUEEN ST W")
 
 
+def test_parse_address_accepts_city_address_ranges():
+    assert parse_address("5250-5254 Yonge St") == (5250, "YONGE ST")
+
+
 def test_parse_address_needs_number():
     assert parse_address("Liberty Street") is None
 
