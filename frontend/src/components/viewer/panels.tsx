@@ -259,6 +259,8 @@ export function ProposalPanel({
             </p>
             {n && <p className="text-[13px] leading-[1.6] text-muted">{n.headline}</p>}
           </div>
+          {/* First, so rental homes and heritage on the lot are never below the fold. */}
+          {app && <SiteToday appNumber={app.app_number} />}
           <div className="space-y-2.5">
             <StatusChip>Stated in application</StatusChip>
             <Row
@@ -277,7 +279,6 @@ export function ProposalPanel({
               </p>
             ))}
           </div>
-          {app && <SiteToday appNumber={app.app_number} />}
           {app && (
             <div className="space-y-2 border-b border-line pb-3.5">
               <p className="text-[11px] text-muted">
