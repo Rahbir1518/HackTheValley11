@@ -92,7 +92,7 @@ cd mobile; npm run android      # adb reverse 8000/3000, then Expo Go opens the 
 - Reload some datasets in place: `backend\.venv\Scripts\python scripts\ingest.py --only heritage rentals`
   (keys: dev_apps parcels address_points massing trees neighbourhoods profiles heritage rentals green_spaces
   schools transit; add `--refresh` to re-download). New columns on old databases are added by `MIGRATIONS`.
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (71 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (72 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
