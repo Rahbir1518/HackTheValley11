@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* Ordis palette: paper white, concrete greys, asphalt black, permit orange. */
+@theme inline {
+  --color-paper: #f7f7f5;
+  --color-concrete: #d9d9d6;
+  --color-steel: #8a8a87;
+  --color-asphalt: #111111;
+  --color-permit: #f26b1d;
+  --color-permit-soft: #ffb07a;
+
+  /* Unity-style editor chrome */
+  --color-ed-bg: #191919;
+  --color-ed-panel: #282828;
+  --color-ed-header: #3c3c3c;
+  --color-ed-border: #111111;
+  --color-ed-hover: #3a3a3a;
+  --color-ed-select: #2c5d87;
+  --color-ed-text: #d2d2d2;
+  --color-ed-dim: #8c8c8c;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  background: var(--color-paper);
+  color: var(--color-asphalt);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Thin dark scrollbars inside the editor */
+.editor ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.editor ::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 4px;
+}
+.editor ::-webkit-scrollbar-track {
+  background: transparent;
+}

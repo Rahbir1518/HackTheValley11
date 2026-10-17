@@ -74,6 +74,42 @@ are retried with exponential backoff. Results are cached in `output/cache/` (int
 text hash, scenes by application + spec hash), so repeat runs are instant. Applications that don't describe
 a building, don't state a height/storeys, or have confidence < 0.4 are reported, not modelled.
 
+## Running the app
+
+Two terminals from the repo root:
+
+```bash
+# 1. API (reads .env)
+backend/.venv/Scripts/python -m uvicorn backend.main:app --port 8000
+
+# 2. Web app
+cd frontend
+cp .env.example .env.local      # add Clerk keys (and optionally a Google Maps Embed key)
+npm install
+npm run dev                     # http://localhost:3000
+```
+
+The landing page is public; `/viewer` requires Clerk sign-in. For local testing without Clerk, put
+`ORDIS_DISABLE_AUTH=true` in `frontend/.env.local` (ignored in production builds).
+
+### The viewer
+
+- **Toolbar**: address search, Run, include closed applications, **Without / With proposal** toggle (`T`),
+  grid, Focus (`F`), LLM/backend status.
+- **Hierarchy**: objects from the `.glb` (proposed parts, existing buildings, lot, trees, parcels); click to
+  select, hover to hide/show.
+- **Scene**: orbit (drag), pan (right-drag), zoom (wheel), fly with **WASD/QE** (Shift = faster), selection
+  outline, axis gizmo, grid.
+- **Sun & shadows**: date (with solstice/equinox presets) and time-of-day slider; the sun position for
+  Toronto comes from `suncalc` and drives a shadow-casting light. Press ▶ to animate sunrise to sunset.
+- **Site imagery**: draggable, resizable window with a real aerial photo (Esri World Imagery, keyless) and
+  Google Street View when `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` is set.
+- **Inspector**: selected object's properties (glTF extras), the application, the interpreted spec, and every
+  assumption with its rule and the confidence score.
+- **Console / Summary / Applications / Ward**: live agent log (colour per agent, expandable JSON), the
+  Narrator's plain-language summary with limitations and source links, nearby applications ("Model this"),
+  and development activity in the ward.
+
 ### Build plan format
 
 ```json
