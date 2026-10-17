@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Box, FileDown, Image as ImageIcon, Maximize, MousePointer2, Move, Rotate3d } from "lucide-react";
+import { ArrowLeft, Box, FileDown, Footprints, Image as ImageIcon, Maximize, MousePointer2, Move, Rotate3d } from "lucide-react";
 import * as THREE from "three";
 import AppNav from "@/components/AppNav";
 import { Ordi, StatusChip } from "@/components/brand";
@@ -22,6 +22,7 @@ import {
   SunTimeline,
   storeysLabel,
 } from "@/components/viewer/panels";
+import StreetMontage from "@/components/viewer/StreetMontage";
 import type { CameraSync, Layers, Tool } from "@/components/viewer/Viewport";
 import { API_URL, getBlock, getBriefing, getSunlight, startRun, type Block, type RunResult, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
 import { rememberPlace } from "@/lib/places";
@@ -92,6 +93,7 @@ function Viewer() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<"explore" | "sunlight">("explore");
+  const [street, setStreet] = useState(false); // "From the street" photomontage (explore only)
   const [showProposal, setShowProposal] = useState(true);
   const [rise, setRise] = useState(1); // construction animation: plays on load, replays on Existing -> With
   const [split, setSplit] = useState(true);
@@ -186,11 +188,25 @@ function Viewer() {
     if (!sceneKey || briefing === "busy") return;
     setBriefing("busy");
     try {
-      // The view on screen; in a split comparison, the "with proposal" side.
+      // The view on screen; in a split comparison, the "with proposal" side; from the street,
+      // the photo with the 3D layer composited on top.
       const canvases = viewportBox.current?.querySelectorAll("canvas");
       let snapshot: string | null = null;
       try {
-        snapshot = canvases?.length ? canvases[canvases.length - 1].toDataURL("image/jpeg", 0.9) : null;
+        const montage = viewportBox.current?.querySelector("[data-street-montage]");
+        const photo = montage?.querySelector("img");
+        const layer = montage?.querySelector("canvas");
+        if (photo && layer) {
+          const out = document.createElement("canvas");
+          out.width = layer.width;
+          out.height = layer.height;
+          const ctx = out.getContext("2d")!;
+          ctx.drawImage(photo, 0, 0, out.width, out.height);
+          ctx.drawImage(layer, 0, 0);
+          snapshot = out.toDataURL("image/jpeg", 0.9);
+        } else {
+          snapshot = canvases?.length ? canvases[canvases.length - 1].toDataURL("image/jpeg", 0.9) : null;
+        }
       } catch {
         snapshot = null; // the PDF says when no snapshot was included
       }
@@ -226,6 +242,7 @@ function Viewer() {
   const annotation = spec ? storeysLabel(spec) : null;
   const tops = useMemo(() => (spec ? storeyTops(spec) : undefined), [spec]);
   const sunlight = mode === "sunlight";
+  const streetView = street && !sunlight && ok;
   const splitView = sunlight && split;
 
   const common = {
@@ -330,10 +347,26 @@ function Viewer() {
         {/* Model viewport */}
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative flex h-[42px] shrink-0 items-center justify-between border-b border-line bg-white px-4">
-            <button onClick={() => setFocusToken((v) => v + 1)} className="flex items-center gap-[7px] text-[11px] text-black" title="Frame the proposal (F)">
-              <Box className="size-3.5" strokeWidth={1.5} />
-              Perspective
-            </button>
+            <div className="flex items-center gap-4 text-[11px]">
+              <button
+                onClick={() => (streetView ? setStreet(false) : setFocusToken((v) => v + 1))}
+                className={`flex items-center gap-[7px] ${streetView ? "text-muted hover:text-ink" : "text-black"}`}
+                title="3D view (F frames the proposal)"
+              >
+                <Box className="size-3.5" strokeWidth={1.5} />
+                Perspective
+              </button>
+              {ok && !sunlight && (
+                <button
+                  onClick={() => setStreet(true)}
+                  className={`flex items-center gap-[7px] ${streetView ? "text-black" : "text-muted hover:text-ink"}`}
+                  title="The proposal drawn onto a Google Street View photo of the site"
+                >
+                  <Footprints className="size-3.5" strokeWidth={1.5} />
+                  From the street
+                </button>
+              )}
+            </div>
             <div className="absolute left-1/2 -translate-x-1/2">
               {sunlight
                 ? segmented([["single", "Single view"], ["split", "Split comparison"]], split ? "split" : "single", (v) => setSplit(v === "split"))
@@ -388,7 +421,10 @@ function Viewer() {
           </div>
 
           <div ref={viewportBox} className="relative min-h-0 flex-1 bg-canvas">
-            {glbUrl && !splitView && (
+            {glbUrl && streetView && sceneKey && (
+              <StreetMontage sceneKey={sceneKey} glbUrl={glbUrl} showProposal={showProposal} block={blockProposals} sun={sun} />
+            )}
+            {glbUrl && !splitView && !streetView && (
               <Viewport
                 {...common}
                 id="main"
@@ -419,7 +455,7 @@ function Viewer() {
               </div>
             )}
 
-            {ok && (
+            {ok && !streetView && (
               <>
                 {/* Tool palette */}
                 <div className="absolute left-4 top-[18px] flex w-10 flex-col gap-1.5 rounded-md border border-line bg-white/95 p-1">

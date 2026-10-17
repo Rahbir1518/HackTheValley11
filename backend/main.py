@@ -18,6 +18,8 @@ import asyncio
 import json
 import os
 
+import httpx
+
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -177,6 +179,44 @@ def capacity_result(scene_key: str, block: bool = False) -> dict:
             proposals.append({"app_number": p["app_number"], "address": p["address"], "units": p["spec"]["units"],
                               "x": ox + cx, "y": oy + cy})
     return capacity.analyse(db, (ox, oy), proposals) | {"block": block}
+
+
+@app.get("/api/street")
+def street(scene_key: str, view: int = 0, turn: float = 0):
+    """From the street: a Street View photo facing the proposal plus the matching camera, so the
+    viewer can draw the 3D model on top (approximate photomontage). Photos are cached per
+    view/heading; cached ones work without the key."""
+    from . import streetview
+
+    scene_dir = _scene_dir(scene_key)
+    db = store.connect()
+    plan = json.loads((scene_dir / "plan.json").read_text())
+    origin = store.find_lot(db, store.get_application(db, plan["metadata"]["application_id"])).origin
+    try:
+        found = streetview.views(scene_dir, origin)
+        if not found:
+            return {"available": False, "views": [],
+                    "reason": "No Google Street View panorama was found on the streets around this site."}
+        v = found[max(0, min(view, len(found) - 1))]
+        heading = round((v["heading"] + max(-90.0, min(90.0, turn))) % 360, 1)
+        image = streetview.photo(scene_dir, v, heading)
+    except streetview.StreetViewError as e:
+        return {"available": False, "views": [], "reason": str(e)}
+    except httpx.HTTPError as e:
+        return {"available": False, "views": [], "reason": f"Google Street View could not be reached ({e})."}
+    return {
+        "available": True,
+        "views": [{"pano_id": x["pano_id"], "distance_m": x["distance_m"], "date": x.get("date")} for x in found],
+        "view": found.index(v),
+        "image_url": f"/files/scenes/{scene_key}/{image}",
+        "camera": {"x": v["x"], "y": v["y"], "height_m": streetview.CAMERA_HEIGHT_M, "heading": heading,
+                   "pitch": v["pitch"], "fov": v["fov"], "vfov": v["vfov"],
+                   "width": streetview.WIDTH, "height": streetview.HEIGHT},
+        "distance_m": v["distance_m"],
+        "date": v.get("date"),
+        "copyright": v.get("copyright") or "© Google",
+        "fits": v["fits"],
+    }
 
 
 @app.get("/api/capacity")

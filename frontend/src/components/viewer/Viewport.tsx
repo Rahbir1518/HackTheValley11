@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { GizmoHelper, GizmoViewport, Grid, Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import type { BlockProposal } from "@/lib/api";
+import type { BlockProposal, StreetCamera } from "@/lib/api";
 import { blockColor, hasAncestor, isOnSite, isProposed, selectableAncestor } from "@/lib/scene";
 import type { Sun } from "@/lib/sun";
 
@@ -98,6 +98,79 @@ export default function Viewport(props: ViewportProps) {
       {process.env.NODE_ENV === "development" && props.id === "main" && <DebugHandle />}
     </Canvas>
   );
+}
+
+// ------------------------------------------------------------------ from the street (photomontage)
+
+export interface StreetOverlayProps {
+  glbUrl: string;
+  camera: StreetCamera;
+  showProposal: boolean;
+  block?: BlockProposal[] | null;
+  sun: Sun;
+}
+
+/** Puts a three.js camera exactly where the Street View camera was (heading clockwise from
+ *  north, pitch up). Local metres: x east, y north; three.js is y-up with north = -z. */
+function aimStreetCamera(camera: THREE.PerspectiveCamera, c: StreetCamera) {
+  const h = THREE.MathUtils.degToRad(c.heading);
+  const p = THREE.MathUtils.degToRad(c.pitch);
+  camera.fov = c.vfov;
+  camera.aspect = c.width / c.height;
+  camera.near = 1;
+  camera.far = 4000;
+  camera.position.set(c.x, c.height_m, -c.y);
+  camera.lookAt(c.x + Math.sin(h) * Math.cos(p), c.height_m + Math.sin(p), -c.y - Math.cos(h) * Math.cos(p));
+  camera.updateProjectionMatrix();
+}
+
+/** Transparent layer over a Street View photo: only the proposal is drawn; the City's existing
+ *  buildings are drawn invisibly (depth only) so they hide the parts of it behind them. */
+export function StreetOverlay(props: StreetOverlayProps) {
+  return (
+    <Canvas
+      gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true, localClippingEnabled: true }}
+      camera={{ manual: true }}
+      style={{ background: "transparent" }}
+    >
+      <SunLight sun={props.sun.up ? props.sun : { ...props.sun, up: true, altitudeDeg: 40, direction: [0.4, 0.8, 0.45] }} shadows={false} />
+      <StreetRig camera={props.camera} />
+      <Suspense fallback={null}>
+        <StreetScene {...props} />
+        {props.block && props.showProposal && <BlockMasses proposals={props.block} selected={null} />}
+      </Suspense>
+    </Canvas>
+  );
+}
+
+function StreetRig({ camera: c }: { camera: StreetCamera }) {
+  const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
+  useLayoutEffect(() => aimStreetCamera(camera, c), [camera, c]);
+  return null;
+}
+
+function StreetScene({ glbUrl, showProposal }: StreetOverlayProps) {
+  const { scene: original } = useGLTF(glbUrl);
+  const scene = useMemo(() => {
+    const copy = original.clone(true);
+    const occluder = new THREE.MeshBasicMaterial({ colorWrite: false });
+    copy.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && !isProposed(o) && hasAncestor(o, (p) => p.name === "Existing_Buildings") && !isOnSite(o)) {
+        m.material = occluder;
+        m.renderOrder = -1; // depth first, so the proposal behind it is hidden
+      }
+    });
+    return copy;
+  }, [original]);
+  useEffect(() => {
+    scene.traverse((o) => {
+      if (o === scene) return;
+      const flat = hasAncestor(o, (p) => ["Ground", "Parcels", "Site", "Street_Trees"].includes(p.name));
+      o.visible = !flat && !isOnSite(o) && (!isProposed(o) || showProposal);
+    });
+  }, [scene, showProposal]);
+  return <primitive object={scene} />;
 }
 
 /** Dev only: exposes the renderer for browser-driven checks (window.__ordis). */

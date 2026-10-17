@@ -129,6 +129,40 @@ export async function getSunlight(sceneKey: string, date: string, block = false)
   return data;
 }
 
+/** Matching camera for a Street View photo (local metres; heading clockwise from north, degrees). */
+export interface StreetCamera {
+  x: number;
+  y: number;
+  height_m: number;
+  heading: number;
+  pitch: number;
+  fov: number;
+  vfov: number;
+  width: number;
+  height: number;
+}
+
+export type StreetView =
+  | {
+      available: true;
+      views: { pano_id: string; distance_m: number; date: string | null }[];
+      view: number;
+      image_url: string;
+      camera: StreetCamera;
+      distance_m: number;
+      date: string | null;
+      copyright: string;
+      fits: boolean;
+    }
+  | { available: false; views: []; reason: string };
+
+export async function getStreet(sceneKey: string, view: number, turn: number): Promise<StreetView> {
+  const r = await fetch(`${API_URL}/api/street?scene_key=${encodeURIComponent(sceneKey)}&view=${view}&turn=${turn}`);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.detail ?? r.statusText);
+  return data;
+}
+
 /** Parks, transit and schools within a walk, today and with the proposal(s) (GET /api/capacity). */
 export interface Capacity {
   radius_m: number;

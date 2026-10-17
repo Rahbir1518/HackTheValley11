@@ -36,6 +36,7 @@ backend/ (FastAPI)
   site_facts.py          what stands on a lot today: heritage + registered rental homes + the application's
                          own words about rental/demolition, and the replacement rule
   capacity.py            "Can the neighbourhood absorb it?": parks per resident, transit, schools in a walk
+  streetview.py          "From the street": Street View panoramas around the site + matching camera
   infill.py              applications that keep the buildings on their lot: retention wording -> keep them,
                          build on the free part of the lot
   blender_bridge/        headless Blender subprocess, streams build steps
@@ -80,7 +81,7 @@ cd frontend; npm run dev                                               # http://
 - Reload some datasets in place: `backend\.venv\Scripts\python scripts\ingest.py --only heritage rentals`
   (keys: dev_apps parcels address_points massing trees neighbourhoods profiles heritage rentals green_spaces
   schools transit; add `--refresh` to re-download). New columns on old databases are added by `MIGRATIONS`.
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (61 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (63 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
@@ -94,6 +95,7 @@ cd frontend; npm run dev                                               # http://
 | `GROQ_API_KEY`, `GROQ_MODEL` | default `openai/gpt-oss-120b` (fast, generous free tier) |
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | default `google/gemma-4-31b-it:free` (free models change often) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | frontend; without them `/ask` and `/viewer` show a setup message |
+| `GOOGLE_MAPS_API_KEY` | backend only; Street View Static API for "From the street" (billing account required, 10,000 free photos/month). Cached photos work without it |
 | `NEXT_PUBLIC_GOOGLE_MAPS_EMBED_KEY` | optional, Street View in the imagery window (aerial needs no key) |
 | `ORDIS_DISABLE_AUTH=true` | local testing only (ignored in production builds) |
 | `NEXT_PUBLIC_API_URL` | default `http://localhost:8000` |
@@ -182,6 +184,15 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   quote and rule go into the site notes, the "Estimated" box and the PDF; the block view does the same for other
   proposals; the sunlight study treats kept buildings as existing. Only scenes that change get a new key;
   runs saved before `infill.VERSION` re-run once from caches (no AI calls). 240 Wellesley St E is the example.
+- **From the street** (view switch next to "Perspective", `GET /api/street?scene_key=&view=&turn=`): a Google
+  Street View photo facing the site with the 3D proposal drawn on top from the same camera (approximate
+  photomontage, labelled; photo date + (c) Google). Free metadata lookups at the site and 45 m N/E/S/W give up to
+  4 viewpoints (whole building in frame first, then nearest); `streetview.frame` aims heading/pitch/fov at the
+  proposal from the panorama's position (camera 2.5 m up). Photos (640x400) are fetched once with the
+  server-side key and cached in `scenes/<key>/street/`; the browser never sees the key. Existing / With /
+  Block apply (existing City buildings are drawn depth-only so they hide what's behind them). Turn +/-20 deg.
+  The briefing PDF composites photo + 3D. Pre-cache demo photos: `python -m backend.warm --street`.
+  Without a key the view says what to set.
 - Clear progress card: steps tick off; on a refusal it says where it stopped, marks skipped steps and offers
   other nearby proposals that can be shown in 3D.
 
