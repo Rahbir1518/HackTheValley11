@@ -53,7 +53,7 @@ frontend/ (Next.js 16, React 19, Tailwind 4, react-three-fiber, Clerk)
   src/app/viewer/page.tsx       3D viewer (Explore + Sunlight study)
   src/components/viewer/        Viewport.tsx (three.js scene), panels.tsx (side panel, timeline, imagery window…)
   src/components/brand.tsx      Identity, StatusChip, Ordi mascot (eyes follow the cursor)
-mobile/ (Expo SDK 58, Expo Router, @clerk/expo; Android companion, runs in Expo Go)
+mobile/ (Expo SDK 57, Expo Router, @clerk/expo; Android companion, runs in Expo Go)
   src/app/_layout.tsx           ClerkProvider + Stack; Stack.Protected sends signed-out users to sign-in
   src/app/sign-in.tsx           email-code sign-in (new emails get an account); same Clerk instance as the web
   src/app/index.tsx             "Near me" (GPS / address search / demo chips) and "My places" (synced, watch stars)
@@ -240,7 +240,10 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   ngrok doesn't answer with its warning page. Checked: the live run stream (SSE), images, POST + Bearer token
   and the whole viewer work through the proxy. Gotcha: in Git Bash, `NEXT_PUBLIC_API_URL=/ordis-api` on the
   command line becomes a Windows path; put it in `.env.local` (or set `MSYS_NO_PATHCONV=1`).
-- Checked: `npx tsc --noEmit`, `npx expo lint`, `npx expo-doctor` (20/20), `npx expo export --platform android`.
+- Checked: `npx tsc --noEmit`, `npx expo lint`, `npx expo-doctor` (21/21), `npx expo export --platform android`.
+- **Stays on SDK 57 on purpose**: the Play Store's Expo Go lagged SDK 58 (released 2026-09-29) and Expo Go runs
+  exactly one SDK, so a 58 project showed "Project is incompatible with this version of Expo Go". Move to a new
+  SDK only after the store's Expo Go supports it (`npx expo install expo@~<sdk> && npx expo install --fix`).
 - Gotchas: Expo's AGENTS.md says to read the versioned docs (APIs change every SDK); Clerk Expo 4.x uses the
   "future" API (`signIn.emailCode.sendCode/verifyCode`, `signIn.finalize()`, `signUp.verifications.*`), not
   `setActive`; `npx expo lint` setup failed on a react-dom 19.3.1 vs react 19.3.0 peer conflict until

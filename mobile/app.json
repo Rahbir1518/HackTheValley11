@@ -32,7 +32,8 @@
           "locationWhenInUsePermission": "Ordis uses your location to show development applications near you."
         }
       ],
-      "@clerk/expo"
+      "@clerk/expo",
+      "expo-status-bar"
     ],
     "scheme": "ordis",
     "experiments": {
