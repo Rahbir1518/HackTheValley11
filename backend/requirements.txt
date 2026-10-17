@@ -9,4 +9,5 @@ pyshp>=2.3
 pytest>=8.0
 openpyxl>=3.1
 reportlab>=4.0  # briefing PDF
+pyjwt[crypto]>=2.8  # verifies Clerk session tokens (saved places)
 tzdata>=2024.1  # IANA time zones for zoneinfo on Windows

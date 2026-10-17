@@ -21,7 +21,7 @@ import os
 import httpx
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,14 +29,14 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-from . import orchestrator  # noqa: E402
+from . import accounts, orchestrator  # noqa: E402
 from .blender_bridge.runner import BlenderError, blender_path  # noqa: E402
 from .data import store  # noqa: E402
 from .llm.providers import provider_status  # noqa: E402
 
 app = FastAPI(title="Ordis")
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
-                   allow_methods=["GET", "POST"], allow_headers=["*"])
+                   allow_methods=["GET", "POST", "DELETE"], allow_headers=["*"])
 orchestrator.CACHE.mkdir(parents=True, exist_ok=True)
 app.mount("/files", StaticFiles(directory=orchestrator.CACHE), name="files")
 
@@ -179,6 +179,40 @@ def capacity_result(scene_key: str, block: bool = False) -> dict:
             proposals.append({"app_number": p["app_number"], "address": p["address"], "units": p["spec"]["units"],
                               "x": ox + cx, "y": oy + cy})
     return capacity.analyse(db, (ox, oy), proposals) | {"block": block}
+
+
+# ------------------------------------------------------------------ saved places (signed-in users)
+
+class PlaceIn(BaseModel):
+    address: str = Field(min_length=3, max_length=200)
+    app_number: str | None = Field(None, max_length=40)
+    label: str | None = Field(None, max_length=200)
+    watched: bool | None = None
+
+
+@app.get("/api/me/places")
+def my_places(user: str = Depends(accounts.current_user)):
+    """The signed-in user's saved places, newest first; watched ones list changes since last seen."""
+    return {"places": accounts.list_places(accounts.connect(), store.connect(), user)}
+
+
+@app.post("/api/me/places")
+def save_my_place(place: PlaceIn, user: str = Depends(accounts.current_user)):
+    """Save or touch a place (opening a proposal records it); `watched` turns watching on/off."""
+    return accounts.save_place(accounts.connect(), store.connect(), user, place.address.strip(),
+                               place.app_number, place.label, place.watched)
+
+
+@app.post("/api/me/places/seen")
+def seen_my_place(place: PlaceIn, user: str = Depends(accounts.current_user)):
+    accounts.mark_seen(accounts.connect(), store.connect(), user, place.address.strip())
+    return {"ok": True}
+
+
+@app.delete("/api/me/places")
+def delete_my_place(address: str, user: str = Depends(accounts.current_user)):
+    accounts.delete_place(accounts.connect(), user, address)
+    return {"ok": True}
 
 
 @app.get("/api/street")

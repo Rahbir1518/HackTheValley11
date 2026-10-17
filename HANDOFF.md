@@ -37,6 +37,7 @@ backend/ (FastAPI)
                          own words about rental/demolition, and the replacement rule
   capacity.py            "Can the neighbourhood absorb it?": parks per resident, transit, schools in a walk
   streetview.py          "From the street": Street View panoramas around the site + matching camera
+  accounts.py            per-user saved/watched places (data/users.sqlite), Clerk session-token check
   infill.py              applications that keep the buildings on their lot: retention wording -> keep them,
                          build on the free part of the lot
   blender_bridge/        headless Blender subprocess, streams build steps
@@ -81,7 +82,7 @@ cd frontend; npm run dev                                               # http://
 - Reload some datasets in place: `backend\.venv\Scripts\python scripts\ingest.py --only heritage rentals`
   (keys: dev_apps parcels address_points massing trees neighbourhoods profiles heritage rentals green_spaces
   schools transit; add `--refresh` to re-download). New columns on old databases are added by `MIGRATIONS`.
-- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (65 passing). Frontend:
+- Tests: `backend\.venv\Scripts\python -m pytest backend\tests -q` (69 passing). Frontend:
   `cd frontend; npx tsc --noEmit; npx eslint src`.
 
 ### Environment (`.env` at repo root; `frontend/.env.local`)
@@ -199,11 +200,19 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   Known limit: buildings missing from the City's 3D data (or photos older than the data) can't hide the
   proposal, so it may be drawn over them; the caption shows the photo date. Bump `streetview.VERSION` to
   rebuild viewpoint lists (cached photos are reused).
+- **Saved places, synced** (`GET/POST/DELETE /api/me/places`, `POST /api/me/places/seen`): signed in, the places a
+  resident opens are stored per Clerk user in `data/users.sqlite` (shared with the mobile app); signed out, they stay
+  in the browser as before (`usePlaces` in `frontend/src/lib/places.ts`). The backend verifies the Clerk session JWT
+  against the instance's JWKS (issuer decoded from the publishable key; read from `CLERK_PUBLISHABLE_KEY` or the
+  web app's `frontend/.env.local`), so no Clerk secret is needed. **Watch** (star in the viewer top bar and the Ask
+  sidebar) records the application's status and next meeting; later differences show as "Status changed: ..." /
+  "Community meeting scheduled: ..." until the place is opened. With `ORDIS_DISABLE_AUTH=true` the backend uses one
+  `local-dev` user.
 - Clear progress card: steps tick off; on a refusal it says where it stopped, marks skipped steps and offers
   other nearby proposals that can be shown in 3D.
 
 **Other endpoints**: `/api/health`, `/api/applications`, `/api/ward`, `/api/sources`, `/api/cached`,
-`/api/involved`, `/api/housing`, `/api/ask`, `/api/block`, `/api/briefing`, `/api/site`, `/api/capacity`, `/files/...` (scenes, previews, heatmaps).
+`/api/involved`, `/api/housing`, `/api/ask`, `/api/block`, `/api/briefing`, `/api/site`, `/api/capacity`, `/api/street`, `/api/me/places`, `/files/...` (scenes, previews, heatmaps).
 
 ## Data gotchas worth remembering
 
@@ -267,7 +276,8 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
 8. Narrated flyover (browser speech).
 9. Plain-language summaries/briefing in Toronto's main languages (numbers and stated/estimated labels kept).
 10. Committee of Adjustment applications (separate open dataset: garden suites, additions, minor variances).
-11. Watch an address: notify on status changes or new meetings (daily ingest diff).
+11. ~~Watch an address~~ (built: changes show in the places list; push notifications would need a scheduled
+    ingest + an Expo development build).
 12. ~~Retained buildings on infill sites~~ (built; see Known limitations for its rule-based edges).
 
 Optional tweak discussed: the Get involved email says "I live near <application address>"; could use the

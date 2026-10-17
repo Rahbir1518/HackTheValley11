@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, ChevronDown, MapPin, Plus } from "lucide-react";
+import { ArrowUp, ChevronDown, MapPin, Plus, Star } from "lucide-react";
 import AppNav from "@/components/AppNav";
 import { Ordi, StatusChip } from "@/components/brand";
 import { API_URL } from "@/lib/api";
-import { loadPlaces, rememberPlace, type Place } from "@/lib/places";
+import { usePlaces } from "@/lib/places";
 
 interface Proposal {
   app_number: string;
@@ -55,12 +55,9 @@ export default function AskPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [places, setPlaces] = useState<Place[]>([]);
+  const { places, synced, remember, setWatched, markSeen } = usePlaces();
   const end = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setPlaces(loadPlaces()); // browser-only storage, read after mount
-  }, []);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns]);
@@ -94,8 +91,7 @@ export default function AskPage() {
       if (!r.ok) throw new Error(data.detail ?? r.statusText);
       setTurns((t) => t.map((x, i) => (i === idx ? { ...x, reply: data } : x)));
       if (data.type === "proposals") {
-        rememberPlace({ address: data.place.address, label: data.featured?.headline ?? "What's proposed here?" });
-        setPlaces(loadPlaces());
+        remember({ address: data.place.address, app: data.featured?.app_number, label: data.featured?.headline ?? "What's proposed here?" });
       }
     } catch (e) {
       setTurns((t) => t.map((x, i) => (i === idx ? { ...x, error: e instanceof Error ? e.message : String(e) } : x)));
@@ -118,17 +114,36 @@ export default function AskPage() {
           </button>
           {places.length > 0 && (
             <div className="space-y-4">
-              <p className="mono text-[10px] text-muted">YOUR RECENT PLACES</p>
+              <p className="mono text-[10px] text-muted">{synced ? "YOUR PLACES · SYNCED" : "YOUR RECENT PLACES"}</p>
               <div className="space-y-1.5">
                 {places.map((p) => (
-                  <button
-                    key={p.address}
-                    onClick={() => send(`What's proposed near ${p.address}?`)}
-                    className={`block w-full rounded-md p-[13px] text-left ${placeHeading?.address === p.address ? "bg-soft" : "hover:bg-soft"}`}
-                  >
-                    <span className="block text-[13px] text-black">{p.address}</span>
-                    <span className="mt-1.5 block truncate text-[11px] text-muted">{p.label}</span>
-                  </button>
+                  <div key={p.address} className={`group relative rounded-md ${placeHeading?.address === p.address ? "bg-soft" : "hover:bg-soft"}`}>
+                    <button
+                      onClick={() => {
+                        if (p.changes?.length) markSeen(p.address);
+                        send(`What's proposed near ${p.address}?`);
+                      }}
+                      className="block w-full p-[13px] pr-9 text-left"
+                    >
+                      <span className="block text-[13px] text-black">{p.address}</span>
+                      <span className="mt-1.5 block truncate text-[11px] text-muted">{p.label}</span>
+                      {p.changes?.map((c) => (
+                        <span key={c} className="mt-1 block text-[10px] leading-[1.4] text-rust">
+                          {c}
+                        </span>
+                      ))}
+                    </button>
+                    {synced && p.app && (
+                      <button
+                        onClick={() => setWatched(p, !p.watched)}
+                        aria-label={p.watched ? "Stop watching" : "Watch for changes"}
+                        title={p.watched ? "Watching: status changes and new meetings show here" : "Watch for status changes and new meetings"}
+                        className={`absolute right-2.5 top-3 ${p.watched ? "text-prop-ink" : "text-muted opacity-0 group-hover:opacity-100"}`}
+                      >
+                        <Star className="size-3.5" strokeWidth={1.6} fill={p.watched ? "currentColor" : "none"} />
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

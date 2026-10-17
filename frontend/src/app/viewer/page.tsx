@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Box, FileDown, Footprints, Image as ImageIcon, Maximize, MousePointer2, Move, Rotate3d } from "lucide-react";
+import { ArrowLeft, Box, FileDown, Footprints, Image as ImageIcon, Star, Maximize, MousePointer2, Move, Rotate3d } from "lucide-react";
 import * as THREE from "three";
 import AppNav from "@/components/AppNav";
 import { Ordi, StatusChip } from "@/components/brand";
@@ -25,7 +25,7 @@ import {
 import StreetMontage from "@/components/viewer/StreetMontage";
 import type { CameraSync, Layers, Tool } from "@/components/viewer/Viewport";
 import { API_URL, getBlock, getBriefing, getSunlight, startRun, type Block, type RunResult, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
-import { rememberPlace } from "@/lib/places";
+import { usePlaces } from "@/lib/places";
 import { BLOCK_COLORS, buildTree, findNode, type SceneNode } from "@/lib/scene";
 import { minutesOfDayToronto, sunAt, sunTimes, torontoInstant } from "@/lib/sun";
 
@@ -67,6 +67,12 @@ function Viewer() {
   const [error, setError] = useState<string | null>(null);
   const counter = useRef(0);
   const runKey = `${address}|${appNumber ?? ""}`;
+  // Saved places (synced when signed in). Read through a ref so the run effect doesn't re-run.
+  const { places, synced, remember, setWatched } = usePlaces();
+  const rememberRef = useRef(remember);
+  useEffect(() => {
+    rememberRef.current = remember;
+  });
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,7 +83,7 @@ function Viewer() {
       (r) => {
         setResult(r);
         setLoadedKey(runKey);
-        if (r.ok && r.application) rememberPlace({ address: r.geocode?.address_full ?? address, app: r.application.app_number, label: r.narration?.headline ?? "Proposal" });
+        if (r.ok && r.application) rememberRef.current({ address: r.geocode?.address_full ?? address, app: r.application.app_number, label: r.narration?.headline ?? "Proposal" });
       },
       (msg) => setError(msg),
     );
@@ -305,6 +311,20 @@ function Viewer() {
           </button>
           <span className="text-[13px] font-semibold text-black">{current?.geocode?.address_full ?? address}</span>
           {app && <StatusChip>{app.status}</StatusChip>}
+          {app && synced && current?.ok && (() => {
+            const placeAddress = current.geocode?.address_full ?? address;
+            const watched = !!places.find((p) => p.address === placeAddress)?.watched;
+            return (
+              <button
+                onClick={() => setWatched({ address: placeAddress, app: app.app_number, label: current.narration?.headline ?? "Proposal" }, !watched)}
+                title={watched ? "Watching: status changes and new meetings show in your places (web and mobile)" : "Watch for status changes and new community meetings"}
+                className={`flex items-center gap-1 text-[11px] ${watched ? "text-prop-ink" : "text-muted hover:text-ink"}`}
+              >
+                <Star className="size-3.5" strokeWidth={1.6} fill={watched ? "currentColor" : "none"} />
+                {watched ? "Watching" : "Watch"}
+              </button>
+            );
+          })()}
         </div>
         <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
           {(["explore", "sunlight"] as const).map((m) => (
