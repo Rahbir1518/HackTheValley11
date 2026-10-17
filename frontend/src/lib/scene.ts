@@ -1,4 +1,5 @@
 import type { Object3D } from "three";
+import type { Spec } from "@/lib/api";
 
 /** One row in the scene collection. Built from glTF nodes that carry an Ordis `role` (glTF extras).
  *  Ids are object names (unique in Blender), so two views of the same scene share them. */
@@ -68,3 +69,16 @@ export function findNode(nodes: SceneNode[], id: string | null): SceneNode | nul
 /** Shades for the other proposals in the block view (the viewed proposal keeps its blue). */
 export const BLOCK_COLORS = ["#D9A066", "#8FB585", "#C38DB4", "#DE8B76", "#74AFA9", "#A99BD8", "#C9B26A", "#8AA0C9"];
 export const blockColor = (i: number) => BLOCK_COLORS[i % BLOCK_COLORS.length];
+
+/** Height of the top of each storey of the tallest part, from the spec (podium floors first);
+ *  steps the construction animation one storey at a time. */
+export function storeyTops(spec: Pick<Spec, "towers" | "podium_storeys" | "total_storeys" | "podium_storey_height_m" | "storey_height_m">): number[] {
+  const podium = spec.towers.length ? spec.podium_storeys : 0;
+  const tops: number[] = [];
+  let h = 0;
+  for (let k = 1; k <= spec.total_storeys; k++) {
+    h += k <= podium ? spec.podium_storey_height_m : spec.storey_height_m;
+    tops.push(h);
+  }
+  return tops;
+}

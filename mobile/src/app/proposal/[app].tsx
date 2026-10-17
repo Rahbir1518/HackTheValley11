@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button, Chip, Label, Notice, Row } from "@/components/ui";
-import { apiImage, buildModel, plannerName, storeysText, useApi, WEB_URL, type Place, type Proposal } from "@/lib/api";
+import { apiImage, buildModel, plannerName, storeysText, useApi, type Place, type Proposal } from "@/lib/api";
 import { color } from "@/lib/theme";
 
 /** Light markdown from the Narrator: drop the markers, keep the words. */
@@ -53,6 +53,11 @@ export default function ProposalScreen() {
     else setBuildNote(res.message ?? "Ordis couldn't build a model for this application.");
   }, [p, address]);
 
+  /** The interactive 3D model, inside the app. */
+  const open3d = useCallback(() => {
+    if (p) router.push({ pathname: "/model/[app]", params: { app: p.application.app_number, title: p.application.address } });
+  }, [p]);
+
   const toggleWatch = useCallback(async () => {
     if (!place) return;
     setPlace(await api<Place>("/api/me/places", { method: "POST", body: JSON.stringify({ address: place.address, app_number: app, watched: !place.watched }) }));
@@ -94,8 +99,14 @@ export default function ProposalScreen() {
         </View>
 
         {p.preview_url ? (
-          <View style={{ gap: 6 }}>
-            <Image source={apiImage(p.preview_url)} style={s.preview} contentFit="cover" transition={200} />
+          <View style={{ gap: 8 }}>
+            <Pressable onPress={open3d}>
+              <Image source={apiImage(p.preview_url)} style={s.preview} contentFit="cover" transition={200} />
+              <View style={s.previewBadge}>
+                <Text style={{ color: color.white, fontSize: 12 }}>Tap to explore in 3D</Text>
+              </View>
+            </Pressable>
+            <Button title="Explore in 3D" onPress={open3d} />
             <Text style={s.caption}>3D massing approximation from the application, among the City&apos;s buildings.</Text>
           </View>
         ) : (
@@ -202,11 +213,6 @@ export default function ProposalScreen() {
         </View>
 
         <View style={{ gap: 10 }}>
-          <Button
-            title="Open the interactive 3D model"
-            kind="secondary"
-            onPress={() => WebBrowser.openBrowserAsync(`${WEB_URL}/viewer?address=${encodeURIComponent(where)}&app=${encodeURIComponent(a.app_number)}`)}
-          />
           {a.application_url && (
             <Pressable onPress={() => WebBrowser.openBrowserAsync(a.application_url!)}>
               <Text style={{ color: color.propInk, fontSize: 13, textAlign: "center" }}>Official City record ↗</Text>
@@ -231,6 +237,7 @@ function Back() {
 const s = StyleSheet.create({
   watch: { borderWidth: 1, borderColor: color.line, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
   preview: { width: "100%", aspectRatio: 16 / 10, borderRadius: 10, backgroundColor: color.canvas },
+  previewBadge: { position: "absolute", right: 10, bottom: 10, backgroundColor: "rgba(32,35,34,0.75)", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
   caption: { fontSize: 11, color: color.muted, lineHeight: 16 },
   title: { fontSize: 24, color: color.ink },
   headline: { fontSize: 17, color: color.ink, lineHeight: 24, fontWeight: "500" },

@@ -43,6 +43,7 @@ function Screens() {
       <Stack.Protected guard={!!isSignedIn}>
         <Stack.Screen name="index" />
         <Stack.Screen name="proposal/[app]" />
+        <Stack.Screen name="model/[app]" />
       </Stack.Protected>
       <Stack.Protected guard={!isSignedIn}>
         <Stack.Screen name="sign-in" />

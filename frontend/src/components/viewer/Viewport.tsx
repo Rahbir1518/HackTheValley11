@@ -48,6 +48,8 @@ export interface ViewportProps {
   rise?: number;
   /** Height of the top of each storey (from the spec), used to step the rise one storey at a time. */
   storeyTops?: number[];
+  /** The axis gizmo (desktop); hidden on the phone view. */
+  gizmo?: boolean;
 }
 
 const CANVAS = "#edf0ef";
@@ -92,9 +94,11 @@ export default function Viewport(props: ViewportProps) {
       </Suspense>
       {props.heatmap && <Heatmap {...props.heatmap} />}
       <Controls id={props.id} tool={props.tool} focusToken={props.focusToken} sync={props.sync} extraBounds={blockBounds} />
-      <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
-        <GizmoViewport axisColors={["#727773", "#727773", "#566f87"]} labelColor="#ffffff" axisHeadScale={0.8} />
-      </GizmoHelper>
+      {props.gizmo !== false && (
+        <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
+          <GizmoViewport axisColors={["#727773", "#727773", "#566f87"]} labelColor="#ffffff" axisHeadScale={0.8} />
+        </GizmoHelper>
+      )}
       {process.env.NODE_ENV === "development" && props.id === "main" && <DebugHandle />}
     </Canvas>
   );

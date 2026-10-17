@@ -24,24 +24,12 @@ import {
 } from "@/components/viewer/panels";
 import StreetMontage from "@/components/viewer/StreetMontage";
 import type { CameraSync, Layers, Tool } from "@/components/viewer/Viewport";
-import { API_URL, getBlock, getBriefing, getSunlight, startRun, type Block, type RunResult, type Spec, type StepEvent, type SunlightStudy } from "@/lib/api";
+import { API_URL, getBlock, getBriefing, getSunlight, startRun, type Block, type RunResult, type StepEvent, type SunlightStudy } from "@/lib/api";
 import { usePlaces } from "@/lib/places";
-import { BLOCK_COLORS, buildTree, findNode, type SceneNode } from "@/lib/scene";
+import { BLOCK_COLORS, buildTree, findNode, storeyTops, type SceneNode } from "@/lib/scene";
 import { minutesOfDayToronto, sunAt, sunTimes, torontoInstant } from "@/lib/sun";
 
 const Viewport = dynamic(() => import("@/components/viewer/Viewport"), { ssr: false });
-
-/** Height of the top of each storey of the tallest part, from the spec (podium floors first). */
-function storeyTops(spec: Spec): number[] {
-  const podium = spec.towers.length ? spec.podium_storeys : 0;
-  const tops: number[] = [];
-  let h = 0;
-  for (let k = 1; k <= spec.total_storeys; k++) {
-    h += k <= podium ? spec.podium_storey_height_m : spec.storey_height_m;
-    tops.push(h);
-  }
-  return tops;
-}
 
 function todayToronto() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(new Date());

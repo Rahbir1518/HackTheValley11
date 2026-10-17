@@ -57,7 +57,8 @@ mobile/ (Expo SDK 57, Expo Router, @clerk/expo; Android companion, runs in Expo 
   src/app/_layout.tsx           ClerkProvider + Stack; Stack.Protected sends signed-out users to sign-in
   src/app/sign-in.tsx           email-code sign-in (new emails get an account); same Clerk instance as the web
   src/app/index.tsx             "Near me" (GPS / address search / demo chips) and "My places" (synced, watch stars)
-  src/app/proposal/[app].tsx    summary, stated facts, on this site today, meeting + planner, 3D model link
+  src/app/proposal/[app].tsx    summary, stated facts, on this site today, meeting + planner, Build / Explore 3D
+  src/app/model/[app].tsx       in-app 3D: WebView of the website's /embed page (react-native-webview)
   src/lib/api.ts                API client (Clerk Bearer token), types; scripts/ports.js = adb reverse 8000/3000
 ```
 
@@ -228,7 +229,9 @@ balance, Clerk dev instance, City open data, Esri imagery with attribution).
   through `/api/me/places`. "Near me": GPS (`/api/nearby?lat=&lon=`), an address search (geocodes via
   `/api/applications`, then `/api/nearby`) and demo chips (the emulator's default GPS is in California). Proposal
   screen (`/api/proposal`): Blender preview, narration, stated facts, rental/heritage with the application's words,
-  next meeting, planner (Email / Call), Watch, "Open the interactive 3D model" (web viewer in a browser tab).
+  next meeting, planner (Email / Call), Watch, **Explore in 3D** (in the app: a WebView of the website's public
+  phone view `/embed?app=`, full-screen model + Existing / With proposal toggle, construction animation, no menus,
+  no sign-in) and **Build the 3D model** (runs `/api/run` from the phone when Ordis hasn't modelled it yet).
 - The emulator reaches the laptop via `adb reverse tcp:8000/3000` (`npm run ports`), so URLs stay `localhost`
   (an origin Clerk dev instances accept).
 - **Real phone through a tunnel** (event wifi usually blocks phone-to-laptop traffic): the web app proxies
