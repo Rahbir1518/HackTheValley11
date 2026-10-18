@@ -68,12 +68,14 @@ cd frontend; npm run dev
 cloudflared tunnel --url http://localhost:3000
 ```
 
-It prints a URL like `https://word-word-word.trycloudflare.com`. **The URL changes every time
-`cloudflared` restarts**, so if you restart it, redo the next step.
+It prints a URL like `https://word-word-word.trycloudflare.com` inside a box. (The
+`developers.cloudflare.com` link it also prints is just documentation, not your tunnel.) **The URL
+changes every time `cloudflared` restarts**, so if you restart it, redo the next step.
 
 ```powershell
-# Terminal 4, step A: point the app at the tunnel (paste your URL into the first line)
-$url = "https://PASTE-YOURS-HERE.trycloudflare.com"
+# Terminal 4, step A: point the app at the tunnel (reads the live URL from cloudflared itself)
+$url = "https://" + (Invoke-RestMethod http://127.0.0.1:20241/quicktunnel).hostname
+$url                                              # should end in .trycloudflare.com
 $f = "mobile\.env.local"
 $lines = (Get-Content $f) -replace '^EXPO_PUBLIC_API_URL=.*', "EXPO_PUBLIC_API_URL=$url/ordis-api" -replace '^EXPO_PUBLIC_WEB_URL=.*', "EXPO_PUBLIC_WEB_URL=$url"
 [IO.File]::WriteAllLines((Resolve-Path $f), $lines)
@@ -151,6 +153,7 @@ backend\.venv\Scripts\python -m backend.run "135 Liberty St"
 | New backend feature missing / "Not Found" | Restart terminal 1 (the backend only loads code at start). |
 | App says "Can't reach the Ordis API" | Open `<tunnel URL>/ordis-api/api/health` in a browser. Fails: check terminals 1 and 3. Works: restart terminal 4 (`npx expo start --tunnel --clear`) so the app rereads `mobile\.env.local`. |
 | Cloudflare was restarted (new URL) | Redo section 3, step A, then restart terminal 4. |
+| App shows "HTTP 404" | `mobile\.env.local` points at the wrong URL (e.g. the Cloudflare docs link). Redo section 3, step A, then restart terminal 4. |
 | Expo Go: "Project is incompatible with this version of Expo Go" | The app is on SDK 57 to match the Play Store's Expo Go. Don't upgrade the SDK until the store's Expo Go supports the new one. |
 | Expo: "Install @expo/ngrok and try again" | Run the same command again (`npx expo start --tunnel --clear`). |
 | Expo: "ngrok tunnel took too long to connect" | Run the command again; Expo's tunnel service is sometimes slow. |
